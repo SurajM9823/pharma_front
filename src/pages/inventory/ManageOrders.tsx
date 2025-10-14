@@ -15,6 +15,9 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+// API Base URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/backend';
+
 interface OrderItem {
   id: number;
   product: {
@@ -75,7 +78,7 @@ export default function ManageOrders() {
     try {
       setLoading(true);
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/inventory/supplier/orders/?page=${page}&page_size=${itemsPerPage}`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/supplier/orders/?page=${page}&page_size=${itemsPerPage}`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -169,7 +172,7 @@ export default function ManageOrders() {
   const fetchInventoryPrices = async (productsData: any[]) => {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/inventory/supplier/inventory-prices/`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/supplier/inventory-prices/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -246,7 +249,7 @@ export default function ManageOrders() {
       setLoading(true);
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       
-      const response = await fetch(`http://localhost:8000/api/inventory/supplier/orders/${selectedOrder.id}/update/`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/supplier/orders/${selectedOrder.id}/update/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -299,7 +302,7 @@ export default function ManageOrders() {
       setLoading(true);
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       
-      const response = await fetch(`http://localhost:8000/api/inventory/supplier/orders/${selectedOrder.id}/update/`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/supplier/orders/${selectedOrder.id}/update/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -366,7 +369,7 @@ export default function ManageOrders() {
       setLoading(true);
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       
-      await fetch(`http://localhost:8000/api/inventory/bulk-orders/${order.id}/status/`, {
+      await fetch(`${API_BASE_URL}/inventory/bulk-orders/${order.id}/status/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -402,7 +405,7 @@ export default function ManageOrders() {
       setLoading(true);
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       
-      await fetch(`http://localhost:8000/api/inventory/purchase-orders/${selectedOrder.id}/ship/`, {
+      await fetch(`${API_BASE_URL}/inventory/purchase-orders/${selectedOrder.id}/ship/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -438,7 +441,7 @@ export default function ManageOrders() {
       setLoading(true);
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       
-      const response = await fetch(`http://localhost:8000/api/inventory/purchase-orders/${order.id}/release-stock/`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/purchase-orders/${order.id}/release-stock/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

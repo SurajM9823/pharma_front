@@ -1,73 +1,189 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
+import { useToast } from "@/hooks/use-toast";
 import { 
   TrendingUp, DollarSign, ShoppingCart, Users, 
   Calendar, Download, FileText, BarChart3,
-  Clock, CreditCard, Percent, Package
+  Clock, CreditCard, Percent, Package, RefreshCw
 } from "lucide-react";
 
-// Mock data for reports
-const dailySalesData = [
-  { date: "2024-01-15", sales: 15420, transactions: 87, customers: 62 },
-  { date: "2024-01-14", sales: 18350, transactions: 94, customers: 71 },
-  { date: "2024-01-13", sales: 12890, transactions: 76, customers: 58 },
-  { date: "2024-01-12", sales: 21450, transactions: 108, customers: 85 },
-  { date: "2024-01-11", sales: 16780, transactions: 89, customers: 67 },
-  { date: "2024-01-10", sales: 19220, transactions: 102, customers: 78 },
-  { date: "2024-01-09", sales: 14560, transactions: 81, customers: 61 },
-];
+// API Base Configuration
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/backend';
 
-const topProducts = [
-  { name: "Paracetamol 500mg", sold: 156, revenue: 3990, profit: 1596 },
-  { name: "Ibuprofen 400mg", sold: 89, revenue: 4005, profit: 1602 },
-  { name: "Cough Syrup", sold: 67, revenue: 8040, profit: 2412 },
-  { name: "Vitamin C 1000mg", sold: 45, revenue: 8100, profit: 2430 },
-  { name: "Hand Sanitizer", sold: 78, revenue: 6630, profit: 1989 },
-];
 
-const paymentMethodData = [
-  { name: "Cash", value: 68, amount: 45280 },
-  { name: "Card", value: 25, amount: 16650 },
-  { name: "Digital Wallet", value: 7, amount: 4660 },
-];
-
-const hourlySalesData = [
-  { hour: "9 AM", sales: 1250 },
-  { hour: "10 AM", sales: 2890 },
-  { hour: "11 AM", sales: 3650 },
-  { hour: "12 PM", sales: 4200 },
-  { hour: "1 PM", sales: 2980 },
-  { hour: "2 PM", sales: 3450 },
-  { hour: "3 PM", sales: 4100 },
-  { hour: "4 PM", sales: 3780 },
-  { hour: "5 PM", sales: 2650 },
-  { hour: "6 PM", sales: 1890 },
-];
-
-const cashierPerformance = [
-  { name: "Ram Sharma", transactions: 156, sales: 45890, avgTransaction: 294 },
-  { name: "Sita Thapa", transactions: 134, sales: 38920, avgTransaction: 290 },
-  { name: "Hari Poudel", transactions: 98, sales: 28450, avgTransaction: 290 },
-  { name: "Gita Rai", transactions: 87, sales: 24680, avgTransaction: 284 },
-];
 
 const COLORS = ['hsl(var(--primary))', 'hsl(var(--secondary))', 'hsl(var(--accent))', 'hsl(var(--muted))'];
 
 export default function POSReports() {
-  const [dateRange, setDateRange] = useState("7days");
-  const [selectedPeriod, setSelectedPeriod] = useState("today");
+  const [dateRange, setDateRange] = useState("today");
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [loading, setLoading] = useState(false);
+  const [salesSummary, setSalesSummary] = useState(null);
+  const [dailySalesData, setDailySalesData] = useState([]);
+  const [hourlySalesData, setHourlySalesData] = useState([]);
+  const [topProducts, setTopProducts] = useState([]);
+  const [paymentMethodData, setPaymentMethodData] = useState([]);
+  const [staffPerformance, setStaffPerformance] = useState([]);
+  const [customerAnalytics, setCustomerAnalytics] = useState(null);
+  const { toast } = useToast();
 
-  const totalSales = dailySalesData.reduce((sum, day) => sum + day.sales, 0);
-  const totalTransactions = dailySalesData.reduce((sum, day) => sum + day.transactions, 0);
-  const avgTransactionValue = totalSales / totalTransactions;
+  // Set date range based on selection
+  useEffect(() => {
+    const today = new Date();
+    let start = new Date();
+    let end = new Date();
+
+    switch (dateRange) {
+      case 'today':
+        start = today;
+        end = today;
+        break;
+      case '7days':
+        start = new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000);
+        end = today;
+        break;
+      case '30days':
+        start = new Date(today.getTime() - 29 * 24 * 60 * 60 * 1000);
+        end = today;
+        break;
+      case 'custom':
+        return; // Don't auto-set dates for custom range
+    }
+
+    setStartDate(start.toISOString().split('T')[0]);
+    setEndDate(end.toISOString().split('T')[0]);
+  }, [dateRange]);
+
+  // Fetch data when dates change
+  useEffect(() => {
+    if (startDate && endDate) {
+      fetchReportsData();
+    }
+  }, [startDate, endDate]);
+
+  const fetchReportsData = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` }),
+      };
+
+      const params = new URLSearchParams({
+        start_date: startDate,
+        end_date: endDate
+      });
+
+      // Fetch all reports data
+      const [summaryRes, dailyRes, hourlyRes, productsRes, paymentsRes, staffRes, customerRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/pos/reports/sales-summary/?${params}`, { headers }),
+        fetch(`${API_BASE_URL}/pos/reports/daily-trend/?${params}`, { headers }),
+        fetch(`${API_BASE_URL}/pos/reports/hourly-pattern/?date=${endDate}`, { headers }),
+        fetch(`${API_BASE_URL}/pos/reports/top-products/?${params}&limit=10`, { headers }),
+        fetch(`${API_BASE_URL}/pos/reports/payment-methods/?${params}`, { headers }),
+        fetch(`${API_BASE_URL}/pos/reports/staff-performance/?${params}`, { headers }),
+        fetch(`${API_BASE_URL}/pos/reports/customer-analytics/?${params}`, { headers })
+      ]);
+
+      if (summaryRes.ok) {
+        const data = await summaryRes.json();
+        setSalesSummary(data.summary);
+      }
+
+      if (dailyRes.ok) {
+        const data = await dailyRes.json();
+        setDailySalesData(data.daily_sales);
+      }
+
+      if (hourlyRes.ok) {
+        const data = await hourlyRes.json();
+        setHourlySalesData(data.hourly_sales);
+      }
+
+      if (productsRes.ok) {
+        const data = await productsRes.json();
+        setTopProducts(data.top_products);
+      }
+
+      if (paymentsRes.ok) {
+        const data = await paymentsRes.json();
+        setPaymentMethodData(data.payment_methods);
+      }
+
+      if (staffRes.ok) {
+        const data = await staffRes.json();
+        setStaffPerformance(data.staff_performance);
+      }
+
+      if (customerRes.ok) {
+        const data = await customerRes.json();
+        setCustomerAnalytics(data.customer_analytics);
+      }
+
+    } catch (error) {
+      console.error('Error fetching reports data:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load reports data",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExport = async (reportType) => {
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const params = new URLSearchParams({
+        start_date: startDate,
+        end_date: endDate,
+        type: reportType
+      });
+
+      const response = await fetch(`${API_BASE_URL}/pos/reports/export/?${params}`, {
+        headers: {
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${reportType}_report_${startDate}_${endDate}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        toast({
+          title: "Export Successful",
+          description: `${reportType} report exported successfully`
+        });
+      } else {
+        throw new Error('Export failed');
+      }
+    } catch (error) {
+      toast({
+        title: "Export Failed",
+        description: "Failed to export report",
+        variant: "destructive"
+      });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -92,10 +208,44 @@ export default function POSReports() {
               <SelectItem value="custom">Custom Range</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline">
-            <Download size={16} className="mr-2" />
-            Export
+          
+          {dateRange === 'custom' && (
+            <>
+              <div className="flex items-center space-x-2">
+                <Label className="text-sm">From:</Label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-40"
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Label className="text-sm">To:</Label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-40"
+                />
+              </div>
+            </>
+          )}
+          
+          <Button variant="outline" onClick={fetchReportsData} disabled={loading}>
+            <RefreshCw size={16} className={`mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
           </Button>
+          
+          <Select onValueChange={handleExport}>
+            <SelectTrigger className="w-32">
+              <SelectValue placeholder="Export" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="sales">Sales Report</SelectItem>
+              <SelectItem value="products">Products Report</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -106,10 +256,14 @@ export default function POSReports() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Total Sales</p>
-                <p className="text-2xl font-bold text-foreground">NPR {totalSales.toLocaleString()}</p>
-                <p className="text-xs text-success flex items-center mt-1">
+                <p className="text-2xl font-bold text-foreground">
+                  NPR {salesSummary?.total_sales?.toLocaleString() || '0'}
+                </p>
+                <p className={`text-xs flex items-center mt-1 ${
+                  (salesSummary?.sales_growth || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                }`}>
                   <TrendingUp size={12} className="mr-1" />
-                  +12.5% from last week
+                  {salesSummary?.sales_growth >= 0 ? '+' : ''}{salesSummary?.sales_growth?.toFixed(1) || '0'}% from previous period
                 </p>
               </div>
               <DollarSign className="h-8 w-8 text-primary" />
@@ -122,10 +276,12 @@ export default function POSReports() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Transactions</p>
-                <p className="text-2xl font-bold text-foreground">{totalTransactions}</p>
-                <p className="text-xs text-success flex items-center mt-1">
+                <p className="text-2xl font-bold text-foreground">{salesSummary?.total_transactions || 0}</p>
+                <p className={`text-xs flex items-center mt-1 ${
+                  (salesSummary?.transaction_growth || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                }`}>
                   <TrendingUp size={12} className="mr-1" />
-                  +8.3% from last week
+                  {salesSummary?.transaction_growth >= 0 ? '+' : ''}{salesSummary?.transaction_growth?.toFixed(1) || '0'}% from previous period
                 </p>
               </div>
               <ShoppingCart className="h-8 w-8 text-primary" />
@@ -138,10 +294,11 @@ export default function POSReports() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Avg Transaction</p>
-                <p className="text-2xl font-bold text-foreground">NPR {avgTransactionValue.toFixed(0)}</p>
-                <p className="text-xs text-success flex items-center mt-1">
-                  <TrendingUp size={12} className="mr-1" />
-                  +3.8% from last week
+                <p className="text-2xl font-bold text-foreground">
+                  NPR {salesSummary?.avg_transaction_value?.toFixed(0) || '0'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Profit Margin: {salesSummary?.profit_margin?.toFixed(1) || '0'}%
                 </p>
               </div>
               <Percent className="h-8 w-8 text-primary" />
@@ -154,10 +311,9 @@ export default function POSReports() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Unique Customers</p>
-                <p className="text-2xl font-bold text-foreground">485</p>
-                <p className="text-xs text-success flex items-center mt-1">
-                  <TrendingUp size={12} className="mr-1" />
-                  +15.2% from last week
+                <p className="text-2xl font-bold text-foreground">{salesSummary?.unique_customers || 0}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Total Items: {salesSummary?.total_items_sold || 0}
                 </p>
               </div>
               <Users className="h-8 w-8 text-primary" />
@@ -184,7 +340,7 @@ export default function POSReports() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={dailySalesData}>
+                  <LineChart data={dailySalesData || []}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" />
                     <YAxis stroke="hsl(var(--muted-foreground))" />
@@ -208,7 +364,7 @@ export default function POSReports() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={hourlySalesData}>
+                  <BarChart data={hourlySalesData || []}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="hour" stroke="hsl(var(--muted-foreground))" />
                     <YAxis stroke="hsl(var(--muted-foreground))" />
@@ -248,14 +404,17 @@ export default function POSReports() {
                 </TableHeader>
                 <TableBody>
                   {topProducts.map((product, index) => (
-                    <TableRow key={product.name}>
-                      <TableCell className="font-medium">{product.name}</TableCell>
-                      <TableCell>{product.sold}</TableCell>
-                      <TableCell>NPR {product.revenue.toLocaleString()}</TableCell>
-                      <TableCell>NPR {product.profit.toLocaleString()}</TableCell>
+                    <TableRow key={product.product_id}>
+                      <TableCell className="font-medium">
+                        {product.name}
+                        {product.strength && <div className="text-xs text-muted-foreground">{product.strength} {product.dosage_form}</div>}
+                      </TableCell>
+                      <TableCell>{product.quantity_sold}</TableCell>
+                      <TableCell>NPR {product.total_revenue?.toLocaleString()}</TableCell>
+                      <TableCell>NPR {product.total_profit?.toLocaleString()}</TableCell>
                       <TableCell>
-                        <Badge variant={index < 2 ? "default" : "secondary"}>
-                          {index < 2 ? "Excellent" : "Good"}
+                        <Badge variant={product.profit_margin > 30 ? "default" : product.profit_margin > 15 ? "secondary" : "outline"}>
+                          {product.profit_margin?.toFixed(1)}% margin
                         </Badge>
                       </TableCell>
                     </TableRow>
@@ -279,16 +438,16 @@ export default function POSReports() {
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
-                      data={paymentMethodData}
+                      data={paymentMethodData || []}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, value }) => `${name}: ${value}%`}
+                      label={({ payment_method, percentage }) => `${payment_method}: ${percentage?.toFixed(1)}%`}
                       outerRadius={80}
                       fill="#8884d8"
-                      dataKey="value"
+                      dataKey="percentage"
                     >
-                      {paymentMethodData.map((entry, index) => (
+                      {(paymentMethodData || []).map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
@@ -304,18 +463,18 @@ export default function POSReports() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {paymentMethodData.map((method, index) => (
-                    <div key={method.name} className="flex items-center justify-between p-3 border border-border rounded">
+                  {(paymentMethodData || []).map((method, index) => (
+                    <div key={method.payment_method} className="flex items-center justify-between p-3 border border-border rounded">
                       <div className="flex items-center space-x-3">
                         <div 
                           className="w-4 h-4 rounded" 
                           style={{ backgroundColor: COLORS[index % COLORS.length] }}
                         />
-                        <span className="font-medium text-foreground">{method.name}</span>
+                        <span className="font-medium text-foreground capitalize">{method.payment_method}</span>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-foreground">NPR {method.amount.toLocaleString()}</p>
-                        <p className="text-sm text-muted-foreground">{method.value}% of total</p>
+                        <p className="font-bold text-foreground">NPR {method.total_amount?.toLocaleString()}</p>
+                        <p className="text-sm text-muted-foreground">{method.percentage?.toFixed(1)}% of total</p>
                       </div>
                     </div>
                   ))}
@@ -345,12 +504,12 @@ export default function POSReports() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {cashierPerformance.map((cashier, index) => (
-                    <TableRow key={cashier.name}>
-                      <TableCell className="font-medium">{cashier.name}</TableCell>
-                      <TableCell>{cashier.transactions}</TableCell>
-                      <TableCell>NPR {cashier.sales.toLocaleString()}</TableCell>
-                      <TableCell>NPR {cashier.avgTransaction}</TableCell>
+                  {(staffPerformance || []).map((staff, index) => (
+                    <TableRow key={staff.staff_id}>
+                      <TableCell className="font-medium">{staff.name}</TableCell>
+                      <TableCell>{staff.transaction_count}</TableCell>
+                      <TableCell>NPR {staff.total_sales?.toLocaleString()}</TableCell>
+                      <TableCell>NPR {staff.avg_transaction_value?.toFixed(0)}</TableCell>
                       <TableCell>
                         <Badge variant={index === 0 ? "default" : index < 2 ? "secondary" : "outline"}>
                           {index === 0 ? "Top Performer" : index < 2 ? "Good" : "Average"}
@@ -372,20 +531,20 @@ export default function POSReports() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex justify-between items-center p-3 border border-border rounded">
-                  <span className="text-foreground">New Customers (This Week)</span>
-                  <span className="font-bold text-primary">47</span>
+                  <span className="text-foreground">New Customers</span>
+                  <span className="font-bold text-primary">{customerAnalytics?.new_customers || 0}</span>
                 </div>
                 <div className="flex justify-between items-center p-3 border border-border rounded">
                   <span className="text-foreground">Returning Customers</span>
-                  <span className="font-bold text-primary">438</span>
+                  <span className="font-bold text-primary">{customerAnalytics?.returning_customers || 0}</span>
                 </div>
                 <div className="flex justify-between items-center p-3 border border-border rounded">
-                  <span className="text-foreground">Average Purchase Value</span>
-                  <span className="font-bold text-primary">NPR 294</span>
+                  <span className="text-foreground">High Value Customers</span>
+                  <span className="font-bold text-primary">{customerAnalytics?.high_value_customers || 0}</span>
                 </div>
                 <div className="flex justify-between items-center p-3 border border-border rounded">
                   <span className="text-foreground">Customer Retention Rate</span>
-                  <span className="font-bold text-success">78.5%</span>
+                  <span className="font-bold text-success">{customerAnalytics?.retention_rate?.toFixed(1) || '0'}%</span>
                 </div>
               </CardContent>
             </Card>
@@ -397,20 +556,20 @@ export default function POSReports() {
               <CardContent>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <span className="text-foreground">Daily Visitors</span>
-                    <span className="font-bold text-primary">85-120</span>
+                    <span className="text-foreground">Total Customers</span>
+                    <span className="font-bold text-primary">{customerAnalytics?.total_customers || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-foreground">Weekly Regulars</span>
-                    <span className="font-bold text-primary">45-60</span>
+                    <span className="text-foreground">New Customers</span>
+                    <span className="font-bold text-primary">{customerAnalytics?.new_customers || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-foreground">Monthly Customers</span>
-                    <span className="font-bold text-primary">25-35</span>
+                    <span className="text-foreground">Returning Customers</span>
+                    <span className="font-bold text-primary">{customerAnalytics?.returning_customers || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-foreground">One-time Buyers</span>
-                    <span className="font-bold text-muted-foreground">15-25</span>
+                    <span className="text-foreground">High Value Customers</span>
+                    <span className="font-bold text-success">{customerAnalytics?.high_value_customers || 0}</span>
                   </div>
                 </div>
               </CardContent>

@@ -13,6 +13,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { NavLink } from "react-router-dom";
 
+// API Base URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/backend';
+
 export default function SupplierManagement() {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,7 +31,7 @@ export default function SupplierManagement() {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       
       // Fetch suppliers with transaction history from ledger (branch-specific)
-      const ledgerSuppliersResponse = await fetch('http://localhost:8000/api/inventory/supplier-ledger/suppliers/', {
+      const ledgerSuppliersResponse = await fetch(`${API_BASE_URL}/inventory/supplier-ledger/suppliers/`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -36,7 +39,7 @@ export default function SupplierManagement() {
       });
       
       // Fetch registered suppliers with transaction history only
-      const suppliersResponse = await fetch('http://localhost:8000/api/auth/users/?role=supplier_admin&has_transactions=true', {
+      const suppliersResponse = await fetch(`${API_BASE_URL}/auth/users/?role=supplier_admin&has_transactions=true`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -44,7 +47,7 @@ export default function SupplierManagement() {
       });
       
       // Fetch payment summary
-      const summaryResponse = await fetch('http://localhost:8000/api/inventory/supplier-ledger/summary/', {
+      const summaryResponse = await fetch(`${API_BASE_URL}/inventory/supplier-ledger/summary/`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),

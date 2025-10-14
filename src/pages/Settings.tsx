@@ -65,7 +65,7 @@ export default function Settings() {
           <CardContent className="space-y-4">
             <div>
               <label className="text-sm font-medium text-foreground">Pharmacy Name</label>
-              <Input defaultValue="PharmaCare Pro" className="mt-1" />
+              <Input defaultValue="drpharmas" className="mt-1" />
             </div>
             <div>
               <label className="text-sm font-medium text-foreground">License Number</label>

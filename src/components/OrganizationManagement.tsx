@@ -212,7 +212,7 @@ export function OrganizationManagement() {
 
         const axios = (await import('axios')).default;
         const token = localStorage.getItem('access_token');
-        const axiosResponse = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/organizations/`, formData, {
+        const axiosResponse = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/backend'}/organizations/`, formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
             ...(token && { Authorization: `Bearer ${token}` }),

@@ -198,7 +198,7 @@ export default function LoginModern() {
           {/* Text Content */}
           <div className="space-y-4">
             <h1 className="text-4xl font-bold text-white">
-              Pharmacy Pro
+              drpharmas
             </h1>
             <p className="text-xl text-slate-300">
               Advanced Healthcare Management
@@ -218,7 +218,7 @@ export default function LoginModern() {
             <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto">
               <Package className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-white">Pharmacy Pro</h1>
+            <h1 className="text-2xl font-bold text-white">drpharmas</h1>
           </div>
           
           {/* Login Form */}

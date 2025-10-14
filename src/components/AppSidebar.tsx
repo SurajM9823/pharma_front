@@ -371,7 +371,7 @@ export function AppSidebar() {
               <Heart className="w-3 h-3 text-primary-foreground" />
             </div>
             {!collapsed && (
-              <span className="text-sm font-semibold text-foreground">MediCare Pro</span>
+              <span className="text-sm font-semibold text-foreground">drpharmas</span>
             )}
           </div>
         </div>

@@ -113,7 +113,7 @@ export default function LayoutFixed() {
         <div className="flex items-center gap-3 ml-12">
           <Heart className="w-6 h-6 text-primary" />
           <div>
-            <h1 className="text-lg font-bold">Pharmacy Pro</h1>
+            <h1 className="text-lg font-bold">drpharmas</h1>
           </div>
         </div>
         

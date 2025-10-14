@@ -14,6 +14,9 @@ import { Users, Plus, Search, MapPin, Phone, Mail, Calendar, Star, CreditCard, H
 import { useToast } from "@/hooks/use-toast";
 import { NavLink } from "react-router-dom";
 
+// API Base URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/backend';
+
 interface Customer {
   id: string;
   name: string;
@@ -64,7 +67,7 @@ export default function CustomerDirectory() {
     try {
       setLoading(true);
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/inventory/customers/`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/customers/`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -179,7 +182,7 @@ export default function CustomerDirectory() {
       setShowDetailsDialog(true);
       
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/inventory/customers/${customer.id}/details/`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/customers/${customer.id}/details/`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),

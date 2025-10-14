@@ -296,7 +296,7 @@ export default function POSSettings() {
                     {receiptSettings.logoUrl && !logoFile ? (
                       <div className="mb-4">
                         <img 
-                          src={receiptSettings.logoUrl} 
+                          src={receiptSettings.logoUrl.startsWith('http') ? receiptSettings.logoUrl : `${import.meta.env.VITE_API_URL || 'http://localhost:8000/backend'}${receiptSettings.logoUrl}`} 
                           alt="Current logo" 
                           className="mx-auto max-h-20 object-contain mb-2"
                           onError={(e) => {
@@ -359,32 +359,32 @@ export default function POSSettings() {
                 />
               </div>
 
-              {taxSettings.vatEnabled && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="vatRate">Tax Rate (%)</Label>
-                    <Input
-                      id="vatRate"
-                      type="number"
-                      value={taxSettings.vatRate}
-                      onChange={(e) => setTaxSettings({...taxSettings, vatRate: Number(e.target.value)})}
-                      placeholder="Enter tax percentage"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                    />
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="taxInclusive">Tax Inclusive Pricing</Label>
-                    <Switch
-                      id="taxInclusive"
-                      checked={taxSettings.taxInclusive}
-                      onCheckedChange={(checked) => setTaxSettings({...taxSettings, taxInclusive: checked})}
-                    />
-                  </div>
-                </>
-              )}
+              <div className={`space-y-4 p-3 border rounded-lg transition-opacity ${!taxSettings.vatEnabled ? 'opacity-50 bg-muted/20' : 'bg-background'}`}>
+                <div className="space-y-2">
+                  <Label htmlFor="vatRate" className={!taxSettings.vatEnabled ? "text-muted-foreground" : ""}>Tax Rate (%)</Label>
+                  <Input
+                    id="vatRate"
+                    type="number"
+                    value={taxSettings.vatRate}
+                    onChange={(e) => setTaxSettings({...taxSettings, vatRate: Number(e.target.value)})}
+                    placeholder="Enter tax percentage"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    disabled={!taxSettings.vatEnabled}
+                  />
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="taxInclusive" className={!taxSettings.vatEnabled ? "text-muted-foreground" : ""}>Tax Inclusive Pricing</Label>
+                  <Switch
+                    id="taxInclusive"
+                    checked={taxSettings.taxInclusive}
+                    onCheckedChange={(checked) => setTaxSettings({...taxSettings, taxInclusive: checked})}
+                    disabled={!taxSettings.vatEnabled}
+                  />
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

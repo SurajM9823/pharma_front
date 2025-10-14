@@ -18,6 +18,9 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+// API Base Configuration
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/backend';
+
 // Status display mapping
 const getStatusDisplay = (status: string) => {
   const statusMap = {
@@ -73,7 +76,7 @@ export default function PurchaseOrders() {
     try {
       setLoading(true);
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/inventory/bulk-orders/?page=${page}&page_size=${itemsPerPage}`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/bulk-orders/?page=${page}&page_size=${itemsPerPage}`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -117,7 +120,7 @@ function getDefaultExpectedDate() {
     if (!query.trim() || !selectedSupplier) return [];
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/inventory/products/purchase-order/?q=${query}&supplier_id=${selectedSupplier}`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/products/purchase-order/?q=${query}&supplier_id=${selectedSupplier}`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -141,7 +144,7 @@ function getDefaultExpectedDate() {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       
       // First get import preview
-      const previewResponse = await fetch(`http://localhost:8000/api/inventory/purchase-orders/${orderId}/import-preview/`, {
+      const previewResponse = await fetch(`${API_BASE_URL}/inventory/purchase-orders/${orderId}/import-preview/`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -175,7 +178,7 @@ function getDefaultExpectedDate() {
       setLoading(true);
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       
-      const response = await fetch(`http://localhost:8000/api/inventory/purchase-orders/${orderToImport.id}/import-stock/`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/purchase-orders/${orderToImport.id}/import-stock/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -242,7 +245,7 @@ function getDefaultExpectedDate() {
   const fetchSuppliers = async () => {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/auth/users/?role=supplier_admin&external_only=true', {
+      const response = await fetch(`${API_BASE_URL}/auth/users/?role=supplier_admin&external_only=true`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -339,7 +342,7 @@ function getDefaultExpectedDate() {
       };
 
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/inventory/bulk-orders/', {
+      const response = await fetch(`${API_BASE_URL}/inventory/bulk-orders/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -401,7 +404,7 @@ function getDefaultExpectedDate() {
       }
       
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000${endpoint}`, {
+      const response = await fetch(`${API_BASE_URL}${endpoint.replace('/api', '')}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -528,7 +531,7 @@ function getDefaultExpectedDate() {
                     }}
                     onSearch={async (query) => {
                       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-                      const response = await fetch(`http://localhost:8000/api/auth/users/?role=supplier_admin&search=${query}&external_only=true`, {
+                      const response = await fetch(`${API_BASE_URL}/auth/users/?role=supplier_admin&search=${query}&external_only=true`, {
                         headers: {
                           'Content-Type': 'application/json',
                           ...(token && { 'Authorization': `Bearer ${token}` }),

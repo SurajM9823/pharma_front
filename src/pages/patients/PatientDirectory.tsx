@@ -159,7 +159,7 @@ export default function PatientDirectory() {
         ...(search && { search })
       });
       
-      const response = await fetch(`http://localhost:8000/api/patients/?${params}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/backend'}/patients/?${params}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('access_token') || localStorage.getItem('token')}`
         }
@@ -675,7 +675,7 @@ export default function PatientDirectory() {
                     </tr>
                   ) : (
                     filteredPatients.map((patient) => (
-                      <tr key={patient.id} className="border-b hover:bg-gray-50">
+                      <tr key={patient.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => { setViewPatient(patient); setShowViewDialog(true); }}>
                         <td className="p-2 font-medium text-blue-600">{patient.patient_id}</td>
                         <td className="p-2">{patient.full_name ? patient.full_name : `${patient.first_name || ''} ${patient.last_name || ''}`}</td>
                         <td className="p-2">{patient.age}Y / {patient.gender}</td>
@@ -710,7 +710,8 @@ export default function PatientDirectory() {
                             size="sm" 
                             variant="outline" 
                             className="h-6 w-6 p-0"
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               setViewPatient(patient);
                               setShowViewDialog(true);
                             }}
@@ -764,6 +765,12 @@ export default function PatientDirectory() {
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold">Patient Details</h2>
                 <div className="flex gap-2">
+                  <Button size="sm" onClick={() => {
+                    handlePatientSelect(viewPatient);
+                    setShowViewDialog(false);
+                  }} className="print:hidden">
+                    Edit Patient
+                  </Button>
                   <Button size="sm" onClick={() => {
                     // Generate registration receipt when printing
                     const receiptData = {

@@ -10,6 +10,9 @@ import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ReceiptModal from "@/components/ReceiptModal";
 
+// API Base URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/backend';
+
 export default function POSBilling() {
   const [searchTerm, setSearchTerm] = useState("");
   const [cartItems, setCartItems] = useState([]);
@@ -61,7 +64,7 @@ export default function POSBilling() {
   const fetchPOSSettings = async () => {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/pos/settings/', {
+      const response = await fetch(`${API_BASE_URL}/pos/settings/`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -115,8 +118,8 @@ export default function POSBilling() {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       const url = userBranchId 
-        ? `http://localhost:8000/api/inventory/inventory-items/?branch_id=${userBranchId}&pos_mode=true`
-        : 'http://localhost:8000/api/inventory/inventory-items/?pos_mode=true';
+        ? `${API_BASE_URL}/inventory/inventory-items/?branch_id=${userBranchId}&pos_mode=true`
+        : `${API_BASE_URL}/inventory/inventory-items/?pos_mode=true`;
       
       const response = await fetch(url, {
         headers: {
@@ -156,7 +159,7 @@ export default function POSBilling() {
   const fetchCompletedBills = async () => {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/pos/sales/', {
+      const response = await fetch(`${API_BASE_URL}/pos/sales/`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -175,7 +178,7 @@ export default function POSBilling() {
   const fetchPendingBills = async () => {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/pos/sales/pending/', {
+      const response = await fetch(`${API_BASE_URL}/pos/sales/pending/`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -223,7 +226,7 @@ export default function POSBilling() {
     
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/inventory/allocate-stock/', {
+      const response = await fetch(`${API_BASE_URL}/inventory/allocate-stock/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -371,7 +374,7 @@ export default function POSBilling() {
     if (value.trim()) {
       try {
         const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-        const response = await fetch(`http://localhost:8000/api/patients/?search=${encodeURIComponent(value)}`, {
+        const response = await fetch(`${API_BASE_URL}/patients/?search=${encodeURIComponent(value)}`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -440,8 +443,8 @@ export default function POSBilling() {
       };
 
       const url = editingBillId 
-        ? `http://localhost:8000/api/pos/sales/${editingBillId}/update-pending/`
-        : 'http://localhost:8000/api/pos/sales/save-pending/';
+        ? `${API_BASE_URL}/pos/sales/${editingBillId}/update-pending/`
+        : `${API_BASE_URL}/pos/sales/save-pending/`;
       
       const response = await fetch(url, {
         method: editingBillId ? 'PUT' : 'POST',
@@ -509,7 +512,7 @@ export default function POSBilling() {
   const handleDeleteSavedBill = async (billId) => {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/pos/sales/${billId}/delete/`, {
+      const response = await fetch(`${API_BASE_URL}/pos/sales/${billId}/delete/`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -580,8 +583,8 @@ export default function POSBilling() {
       };
 
       const endpoint = editingBillId 
-        ? 'http://localhost:8000/api/pos/sales/complete/'
-        : 'http://localhost:8000/api/pos/sales/create/';
+        ? `${API_BASE_URL}/pos/sales/complete/`
+        : `${API_BASE_URL}/pos/sales/create/`;
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -655,7 +658,7 @@ export default function POSBilling() {
     // Generate receipt data for viewing
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/pos/sales/${bill.id}/receipt/`, {
+      const response = await fetch(`${API_BASE_URL}/pos/sales/${bill.id}/receipt/`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -673,7 +676,7 @@ export default function POSBilling() {
   const handleDeleteBill = async (billId) => {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/pos/sales/${billId}/delete/`, {
+      const response = await fetch(`${API_BASE_URL}/pos/sales/${billId}/delete/`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -1187,7 +1190,7 @@ export default function POSBilling() {
                         <Button size="sm" variant="outline" onClick={async () => {
                           try {
                             const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-                            const response = await fetch(`http://localhost:8000/api/pos/sales/${bill.id}/receipt/`, {
+                            const response = await fetch(`${API_BASE_URL}/pos/sales/${bill.id}/receipt/`, {
                               headers: {
                                 'Authorization': `Bearer ${token}`
                               }

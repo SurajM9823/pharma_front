@@ -41,7 +41,7 @@ export interface Branch {
 export const mockOrganizations: Organization[] = [
   {
     id: "org-1",
-    name: "PharmaCare Pro",
+    name: "drpharmas",
     type: "Pharmacy Chain",
     address: "123 Health Street, Medical District",
     phone: "(555) 123-0000",

@@ -10,6 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Trash2, Edit3, Save, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+// API Base URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/backend';
+
 interface OrderItem {
   id: number;
   product: {
@@ -110,7 +113,7 @@ export default function OrderAdjustmentDialog({
       };
 
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/inventory/purchase-orders/${order?.id}/adjust/`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/purchase-orders/${order?.id}/adjust/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

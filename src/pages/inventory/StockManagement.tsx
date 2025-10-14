@@ -11,6 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Search, Plus, Edit, Trash2, AlertTriangle, Package, TrendingUp, TrendingDown, Building2, RotateCcw, Clock, Calendar } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+// API Base Configuration
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/backend';
+
 
 
 export default function StockManagement() {
@@ -87,8 +90,8 @@ export default function StockManagement() {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       const url = userBranchId 
-        ? `http://localhost:8000/api/inventory/inventory-items/?branch_id=${userBranchId}`
-        : 'http://localhost:8000/api/inventory/inventory-items/';
+        ? `${API_BASE_URL}/inventory/inventory-items/?branch_id=${userBranchId}`
+        : `${API_BASE_URL}/inventory/inventory-items/`;
       
       const response = await fetch(url, {
         headers: {
@@ -115,7 +118,7 @@ export default function StockManagement() {
   const fetchPurchaseHistory = async () => {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/inventory/purchase-history/', {
+      const response = await fetch(`${API_BASE_URL}/inventory/purchase-history/`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -157,8 +160,8 @@ export default function StockManagement() {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       const url = userBranchId 
-        ? `http://localhost:8000/api/inventory/suppliers/search/?q=${encodeURIComponent(query)}&branch_id=${userBranchId}`
-        : `http://localhost:8000/api/inventory/suppliers/search/?q=${encodeURIComponent(query)}`;
+        ? `${API_BASE_URL}/inventory/suppliers/search/?q=${encodeURIComponent(query)}&branch_id=${userBranchId}`
+        : `${API_BASE_URL}/inventory/suppliers/search/?q=${encodeURIComponent(query)}`;
       
       const response = await fetch(url, {
         method: 'GET',
@@ -200,7 +203,7 @@ export default function StockManagement() {
       console.log('Making API call to medicine search');
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       console.log('Token found:', token ? 'Yes' : 'No');
-      const response = await fetch(`http://localhost:8000/api/inventory/medicines/search/?q=${encodeURIComponent(query)}`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/medicines/search/?q=${encodeURIComponent(query)}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -427,7 +430,7 @@ export default function StockManagement() {
           expiry_date: item.expiryDate,
         };
         
-        const response = await fetch('http://localhost:8000/api/inventory/create-inventory-item/', {
+        const response = await fetch(`${API_BASE_URL}/inventory/create-inventory-item/`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -916,7 +919,7 @@ export default function StockManagement() {
                   const token = localStorage.getItem('access_token') || localStorage.getItem('token');
                   console.log('Token available:', token ? 'Yes' : 'No');
                   
-                  const response = await fetch('http://localhost:8000/api/inventory/inventory/create/', {
+                  const response = await fetch(`${API_BASE_URL}/inventory/inventory/create/`, {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
@@ -1328,7 +1331,7 @@ export default function StockManagement() {
               try {
                 const token = localStorage.getItem('access_token') || localStorage.getItem('token');
                 const updatePromises = selectedItem.batches.map(batch => 
-                  fetch(`http://localhost:8000/api/inventory/inventory-items/${batch.id}/`, {
+                  fetch(`${API_BASE_URL}/inventory/inventory-items/${batch.id}/`, {
                     method: 'PATCH',
                     headers: {
                       'Content-Type': 'application/json',
@@ -1598,7 +1601,7 @@ export default function StockManagement() {
                 console.log('Restock item:', restockItem);
                 
                 const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-                const response = await fetch('http://localhost:8000/api/inventory/restock/', {
+                const response = await fetch(`${API_BASE_URL}/inventory/restock/`, {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',

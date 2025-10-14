@@ -88,11 +88,11 @@
   }
 }
 
-/* MediCare Pro Design System - Hospital Gradient Theme */
+/* drpharmas Design System - Hospital Gradient Theme */
 
 @layer base {
   :root {
-    /* MediCare Pro Theme - Hospital Gradients */
+    /* drpharmas Theme - Hospital Gradients */
     --background: 210 20% 98%;
     --foreground: 215 25% 15%;
 
@@ -245,7 +245,7 @@
     margin: 0;
   }
 
-  /* MediCare Pro Gradient Utilities */
+  /* drpharmas Gradient Utilities */
   .gradient-primary {
     background: linear-gradient(135deg, hsl(200 95% 45%), hsl(180 85% 45%));
   }

@@ -14,36 +14,10 @@ import { useToast } from "@/hooks/use-toast";
 import { inventoryAPI, Category, Manufacturer } from "@/services/api";
 import { useAppStore } from "@/store/appStore";
 import {
-  Package, AlertTriangle, RotateCw, Bell,
-  Save, Settings, Calendar, DollarSign, Plus, Edit, Trash2
+  Settings, Plus, Edit, Trash2
 } from "lucide-react";
 
 export default function InventorySettings() {
-  const [settings, setSettings] = useState({
-    // Stock Management
-    lowStockThreshold: 10,
-    criticalStockThreshold: 5,
-    autoReorder: true,
-    reorderQuantity: 50,
-
-    // Expiry Management
-    expiryWarningDays: 30,
-    criticalExpiryDays: 7,
-    enableExpiryAlerts: true,
-    removeExpiredFromSales: true,
-
-    // Cost Settings
-    defaultMarkupPercent: 25,
-    allowNegativeStock: false,
-    trackLotNumbers: true,
-    requireApprovalForOrders: true,
-
-    // Notifications
-    stockAlerts: true,
-    expiryAlerts: true,
-    orderAlerts: true,
-    emailNotifications: false,
-  });
 
   // Category and Manufacturer management
   const [categories, setCategories] = useState<Category[]>([]);
@@ -106,13 +80,7 @@ export default function InventorySettings() {
     }
   };
 
-  const handleToggle = (key: string) => {
-    setSettings(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }));
-  };
 
-  const handleInputChange = (key: string, value: string | number) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
-  };
 
   // Category handlers
   const handleAddCategory = async () => {
@@ -303,230 +271,14 @@ export default function InventorySettings() {
           <h2 className="text-2xl font-bold text-foreground">Inventory Settings</h2>
           <p className="text-muted-foreground">Configure inventory management preferences and manage categories</p>
         </div>
-        <Button className="bg-primary hover:bg-primary-hover">
-          <Save size={16} className="mr-2" />
-          Save Settings
-        </Button>
+
       </div>
 
-      <Tabs defaultValue="general" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="general">General Settings</TabsTrigger>
+      <Tabs defaultValue="categories" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="manufacturers">Manufacturers</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="general" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Stock Management */}
-            <Card className="bg-card border border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center text-card-foreground">
-                  <Package className="mr-2 text-primary" size={20} />
-                  Stock Management
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-foreground">Low Stock Threshold</label>
-                  <Input
-                    type="number"
-                    value={settings.lowStockThreshold}
-                    onChange={(e) => handleInputChange("lowStockThreshold", parseInt(e.target.value))}
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Alert when stock falls below this level</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-foreground">Critical Stock Threshold</label>
-                  <Input
-                    type="number"
-                    value={settings.criticalStockThreshold}
-                    onChange={(e) => handleInputChange("criticalStockThreshold", parseInt(e.target.value))}
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Urgent alert when stock falls below this level</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Auto Reorder</p>
-                    <p className="text-xs text-muted-foreground">Automatically suggest reorders for low stock</p>
-                  </div>
-                  <Switch
-                    checked={settings.autoReorder}
-                    onCheckedChange={() => handleToggle("autoReorder")}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-foreground">Default Reorder Quantity</label>
-                  <Input
-                    type="number"
-                    value={settings.reorderQuantity}
-                    onChange={(e) => handleInputChange("reorderQuantity", parseInt(e.target.value))}
-                    className="mt-1"
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Allow Negative Stock</p>
-                    <p className="text-xs text-muted-foreground">Allow sales even when out of stock</p>
-                  </div>
-                  <Switch
-                    checked={settings.allowNegativeStock}
-                    onCheckedChange={() => handleToggle("allowNegativeStock")}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Expiry Management */}
-            <Card className="bg-card border border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center text-card-foreground">
-                  <Calendar className="mr-2 text-warning" size={20} />
-                  Expiry Management
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-foreground">Expiry Warning (Days)</label>
-                  <Input
-                    type="number"
-                    value={settings.expiryWarningDays}
-                    onChange={(e) => handleInputChange("expiryWarningDays", parseInt(e.target.value))}
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Warn when products expire within this many days</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-foreground">Critical Expiry Warning (Days)</label>
-                  <Input
-                    type="number"
-                    value={settings.criticalExpiryDays}
-                    onChange={(e) => handleInputChange("criticalExpiryDays", parseInt(e.target.value))}
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Urgent alert for near-expiry products</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Enable Expiry Alerts</p>
-                    <p className="text-xs text-muted-foreground">Receive notifications for expiring products</p>
-                  </div>
-                  <Switch
-                    checked={settings.enableExpiryAlerts}
-                    onCheckedChange={() => handleToggle("enableExpiryAlerts")}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Remove Expired from Sales</p>
-                    <p className="text-xs text-muted-foreground">Automatically hide expired products from POS</p>
-                  </div>
-                  <Switch
-                    checked={settings.removeExpiredFromSales}
-                    onCheckedChange={() => handleToggle("removeExpiredFromSales")}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Cost & Pricing */}
-            <Card className="bg-card border border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center text-card-foreground">
-                  <DollarSign className="mr-2 text-success" size={20} />
-                  Cost & Pricing
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-foreground">Default Markup (%)</label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={settings.defaultMarkupPercent}
-                    onChange={(e) => handleInputChange("defaultMarkupPercent", parseFloat(e.target.value))}
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Default markup percentage for new products</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Track Lot Numbers</p>
-                    <p className="text-xs text-muted-foreground">Track inventory by lot/batch numbers</p>
-                  </div>
-                  <Switch
-                    checked={settings.trackLotNumbers}
-                    onCheckedChange={() => handleToggle("trackLotNumbers")}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Require Order Approval</p>
-                    <p className="text-xs text-muted-foreground">Purchase orders need manager approval</p>
-                  </div>
-                  <Switch
-                    checked={settings.requireApprovalForOrders}
-                    onCheckedChange={() => handleToggle("requireApprovalForOrders")}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Notification Settings */}
-            <Card className="bg-card border border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center text-card-foreground">
-                  <Bell className="mr-2 text-primary" size={20} />
-                  Notifications
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Stock Alerts</p>
-                    <p className="text-xs text-muted-foreground">Notifications for low/critical stock</p>
-                  </div>
-                  <Switch
-                    checked={settings.stockAlerts}
-                    onCheckedChange={() => handleToggle("stockAlerts")}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Expiry Alerts</p>
-                    <p className="text-xs text-muted-foreground">Notifications for expiring products</p>
-                  </div>
-                  <Switch
-                    checked={settings.expiryAlerts}
-                    onCheckedChange={() => handleToggle("expiryAlerts")}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Order Alerts</p>
-                    <p className="text-xs text-muted-foreground">Notifications for order status changes</p>
-                  </div>
-                  <Switch
-                    checked={settings.orderAlerts}
-                    onCheckedChange={() => handleToggle("orderAlerts")}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Email Notifications</p>
-                    <p className="text-xs text-muted-foreground">Send alerts via email</p>
-                  </div>
-                  <Switch
-                    checked={settings.emailNotifications}
-                    onCheckedChange={() => handleToggle("emailNotifications")}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
 
         <TabsContent value="categories" className="space-y-6">
           <Card className="bg-card border border-border">

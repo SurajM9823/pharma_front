@@ -73,7 +73,7 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
                 <Package className="w-5 h-5 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold">PharmaCare Pro</h1>
+                <h1 className="text-lg font-semibold">drpharmas</h1>
                 <p className="text-xs text-header-foreground/70">Loading...</p>
               </div>
             </div>
@@ -103,7 +103,7 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
               <Package className="w-5 h-5 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold">PharmaCare Pro</h1>
+              <h1 className="text-lg font-semibold">drpharmas</h1>
               <div className="flex items-center space-x-2 text-xs text-header-foreground/70">
                 {userProfile?.organization_name && (
                   <>

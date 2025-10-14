@@ -16,6 +16,9 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+// API Base URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/backend';
+
 // Mock data
 const supplierData = {
   id: 1,
@@ -126,7 +129,7 @@ export default function SupplierDetail() {
           });
           
           // Fetch transaction history using new endpoint
-          const transactionResponse = await fetch(`http://localhost:8000/api/inventory/suppliers/custom_${supplierName.replace(/\s+/g, '_')}/transactions/`, {
+          const transactionResponse = await fetch(`${API_BASE_URL}/inventory/suppliers/custom_${supplierName.replace(/\s+/g, '_')}/transactions/`, {
             headers: {
               'Content-Type': 'application/json',
               ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -141,7 +144,7 @@ export default function SupplierDetail() {
             });
           } else {
             // Fallback to old endpoint
-            const ledgerResponse = await fetch(`http://localhost:8000/api/inventory/supplier-ledger/detail/?supplier_name=${encodeURIComponent(supplierName)}`, {
+            const ledgerResponse = await fetch(`${API_BASE_URL}/inventory/supplier-ledger/detail/?supplier_name=${encodeURIComponent(supplierName)}`, {
               headers: {
                 'Content-Type': 'application/json',
                 ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -155,7 +158,7 @@ export default function SupplierDetail() {
           }
         } else {
           // Handle regular user suppliers - use list API to get full data
-          const supplierResponse = await fetch(`http://localhost:8000/api/auth/users/?role=supplier_admin`, {
+          const supplierResponse = await fetch(`${API_BASE_URL}/auth/users/?role=supplier_admin`, {
             headers: {
               'Content-Type': 'application/json',
               ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -174,7 +177,7 @@ export default function SupplierDetail() {
             const supplierName = data.organization_name || `${data.first_name} ${data.last_name}`;
             
             // Use supplier detail endpoint
-            const supplierResponse = await fetch(`http://localhost:8000/api/inventory/suppliers/${data.id}/`, {
+            const supplierResponse = await fetch(`${API_BASE_URL}/inventory/suppliers/${data.id}/`, {
               headers: {
                 'Content-Type': 'application/json',
                 ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -239,7 +242,7 @@ export default function SupplierDetail() {
       setDetailsPage(1);
       
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/inventory/transaction-details/?transaction_id=${encodeURIComponent(transaction.reference_id)}&source_type=${transaction.source_type}`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/transaction-details/?transaction_id=${encodeURIComponent(transaction.reference_id)}&source_type=${transaction.source_type}`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -406,7 +409,7 @@ export default function SupplierDetail() {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       const supplierName = supplierData.organization_name || `${supplierData.first_name} ${supplierData.last_name}`;
       
-      const response = await fetch('http://localhost:8000/api/inventory/supplier-payment/', {
+      const response = await fetch(`${API_BASE_URL}/inventory/supplier-payment/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -436,7 +439,7 @@ export default function SupplierDetail() {
         // Refresh ledger data for both custom and regular suppliers
         if (supplierData.id && !supplierData.id.toString().startsWith('custom_')) {
           // Refresh using supplier detail endpoint for regular suppliers
-          const refreshResponse = await fetch(`http://localhost:8000/api/inventory/suppliers/${supplierData.id}/`, {
+          const refreshResponse = await fetch(`${API_BASE_URL}/inventory/suppliers/${supplierData.id}/`, {
             headers: {
               'Content-Type': 'application/json',
               ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -453,7 +456,7 @@ export default function SupplierDetail() {
         } else {
           // Refresh for custom suppliers - use the same supplier name from the ID
           const customSupplierName = supplierData.id.toString().replace('custom_', '').replace(/_/g, ' ');
-          const transactionResponse = await fetch(`http://localhost:8000/api/inventory/suppliers/custom_${customSupplierName.replace(/\s+/g, '_')}/transactions/`, {
+          const transactionResponse = await fetch(`${API_BASE_URL}/inventory/suppliers/custom_${customSupplierName.replace(/\s+/g, '_')}/transactions/`, {
             headers: {
               'Content-Type': 'application/json',
               ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -468,7 +471,7 @@ export default function SupplierDetail() {
             });
           } else {
             // Fallback to old endpoint
-            const ledgerResponse = await fetch(`http://localhost:8000/api/inventory/supplier-ledger/detail/?supplier_name=${encodeURIComponent(customSupplierName)}`, {
+            const ledgerResponse = await fetch(`${API_BASE_URL}/inventory/supplier-ledger/detail/?supplier_name=${encodeURIComponent(customSupplierName)}`, {
               headers: {
                 'Content-Type': 'application/json',
                 ...(token && { 'Authorization': `Bearer ${token}` }),

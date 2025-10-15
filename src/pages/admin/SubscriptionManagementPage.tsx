@@ -1,103 +1,207 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  CreditCard, TrendingUp, Calendar, RefreshCw,
-  Loader2, DollarSign, Users, Building2
-} from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { organizationsAPI } from "@/services/api";
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RefreshCw, TrendingUp, Users, Building, DollarSign, CreditCard, Plus } from 'lucide-react';
+import { subscriptionAPI, organizationsAPI } from '@/services/api';
+
+interface SubscriptionPlan {
+  id: number;
+  name: string;
+  display_name: string;
+  price: number;
+  currency: string;
+  billing_cycle: string;
+  max_users: number | null;
+  max_organizations: number | null;
+  features: string[];
+  is_active: boolean;
+}
+
+interface OrganizationSubscription {
+  id: number;
+  organization: number;
+  organization_name: string;
+  plan: number;
+  plan_details: SubscriptionPlan;
+  status: string;
+  start_date: string;
+  end_date: string;
+  auto_renew: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+interface SubscriptionStats {
+  total_organizations: number;
+  active_subscriptions: number;
+  monthly_revenue: number;
+  growth_rate: number;
+  subscription_distribution: Record<string, number>;
+  recent_subscriptions: OrganizationSubscription[];
+}
 
 export default function SubscriptionManagementPage() {
-  const { toast } = useToast();
+  const [stats, setStats] = useState<SubscriptionStats | null>(null);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [subscriptions, setSubscriptions] = useState<OrganizationSubscription[]>([]);
   const [organizations, setOrganizations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statsLoading, setStatsLoading] = useState(true);
-  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [showCreatePlan, setShowCreatePlan] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
+  const [planData, setPlanData] = useState({
+    name: '',
+    display_name: '',
+    pricing_tiers: [{ cycle: 'monthly', price: '' }],
+    max_users: '',
+    max_organizations: '',
+    max_branches: '',
+    features: ['']
+  });
 
-  useEffect(() => {
-    fetchOrganizations();
-    fetchDashboardStats();
-  }, []);
-
-  const fetchOrganizations = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
-      const response = await organizationsAPI.getOrganizations();
-      if (response.success && response.data) {
-        setOrganizations(response.data);
-      } else {
-        setOrganizations([]);
-      }
-    } catch (error: any) {
-      console.error('Failed to fetch organizations:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load organizations.",
-        variant: "destructive",
-      });
-      setOrganizations([]);
+      const [statsResponse, plansResponse, subscriptionsResponse, orgsResponse] = await Promise.all([
+        subscriptionAPI.getStats(),
+        subscriptionAPI.getPlans(),
+        subscriptionAPI.getSubscriptions(),
+        organizationsAPI.getOrganizations()
+      ]);
+      
+      const statsData = statsResponse.data;
+      const plansData = plansResponse.data;
+      const subscriptionsData = subscriptionsResponse.data;
+      const orgsData = orgsResponse.data;
+      
+      setStats(statsData || null);
+      setPlans(Array.isArray(plansData) ? plansData : []);
+      setSubscriptions(subscriptionsData.results || subscriptionsData || []);
+      setOrganizations(Array.isArray(orgsData) ? orgsData : []);
+    } catch (error) {
+      console.error('Error fetching subscription data:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchDashboardStats = async () => {
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+
+
+  const handleCreatePlan = async () => {
     try {
-      setStatsLoading(true);
-      const response = await organizationsAPI.getDashboardStats();
-      if (response.success && response.data) {
-        setDashboardStats(response.data);
+      const planPayload = {
+        name: planData.name,
+        display_name: planData.display_name,
+        pricing_tiers: planData.pricing_tiers.filter(t => t.price),
+        max_users: planData.max_users ? parseInt(planData.max_users) : null,
+        max_organizations: planData.max_organizations ? parseInt(planData.max_organizations) : null,
+        max_branches: planData.max_branches ? parseInt(planData.max_branches) : null,
+        features: planData.features.filter(f => f.trim())
+      };
+      
+      if (editingPlan) {
+        await subscriptionAPI.updatePlan(editingPlan.id, planPayload);
+      } else {
+        await subscriptionAPI.createPlan(planPayload);
       }
+      
+      setShowCreatePlan(false);
+      setEditingPlan(null);
+      setPlanData({ name: '', display_name: '', pricing_tiers: [{ cycle: 'monthly', price: '' }], max_users: '', max_organizations: '', max_branches: '', features: [''] });
+      fetchData();
     } catch (error) {
-      console.error('Failed to fetch dashboard stats:', error);
-    } finally {
-      setStatsLoading(false);
+      console.error('Error saving plan:', error);
     }
   };
 
-  const getSubscriptionBadgeColor = (plan: string) => {
-    const colors = {
-      trial: "bg-gray-100 text-gray-800",
-      basic: "bg-blue-100 text-blue-800",
-      professional: "bg-green-100 text-green-800",
-      enterprise: "bg-purple-100 text-purple-800",
+  const handleEditPlan = (plan: SubscriptionPlan) => {
+    setEditingPlan(plan);
+    setPlanData({
+      name: plan.name,
+      display_name: plan.display_name,
+      pricing_tiers: plan.pricing_tiers || [{ cycle: 'monthly', price: plan.price.toString() }],
+      max_users: plan.max_users?.toString() || '',
+      max_organizations: plan.max_organizations?.toString() || '',
+      max_branches: plan.max_branches?.toString() || '',
+      features: plan.features.length ? plan.features : ['']
+    });
+    setShowCreatePlan(true);
+  };
+
+  const handleDeletePlan = async (planId: number) => {
+    if (confirm('Are you sure you want to delete this plan?')) {
+      try {
+        await subscriptionAPI.deletePlan(planId);
+        fetchData();
+      } catch (error) {
+        console.error('Error deleting plan:', error);
+      }
+    }
+  };
+
+  const handleToggleStatus = async (planId: number) => {
+    try {
+      await subscriptionAPI.togglePlanStatus(planId);
+      fetchData();
+    } catch (error) {
+      console.error('Error toggling plan status:', error);
+    }
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const getStatusBadge = (status: string) => {
+    const statusColors = {
+      active: 'bg-green-100 text-green-800',
+      inactive: 'bg-gray-100 text-gray-800',
+      expired: 'bg-red-100 text-red-800',
+      cancelled: 'bg-yellow-100 text-yellow-800',
     };
-    return colors[plan as keyof typeof colors] || "bg-gray-100 text-gray-800";
+    
+    return (
+      <Badge className={statusColors[status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800'}>
+        {status.charAt(0).toUpperCase() + status.slice(1)}
+      </Badge>
+    );
   };
 
-  const subscriptionPlans = [
-    {
-      name: "Trial",
-      price: "₹0",
-      period: "month",
-      features: ["Basic features", "Up to 10 users", "1 organization", "Community support"],
-      color: "gray"
-    },
-    {
-      name: "Basic",
-      price: "₹5,000",
-      period: "month",
-      features: ["All trial features", "Up to 50 users", "5 organizations", "Email support", "Basic reporting"],
-      color: "blue"
-    },
-    {
-      name: "Professional",
-      price: "₹15,000",
-      period: "month",
-      features: ["All basic features", "Unlimited users", "Unlimited organizations", "Priority support", "Advanced reporting", "API access"],
-      color: "green"
-    },
-    {
-      name: "Enterprise",
-      price: "₹50,000",
-      period: "month",
-      features: ["All professional features", "Custom integrations", "Dedicated support", "SLA guarantee", "White-label option"],
-      color: "purple"
-    }
-  ];
+  const getPlanBadge = (planName: string) => {
+    const planColors = {
+      trial: 'bg-blue-100 text-blue-800',
+      basic: 'bg-green-100 text-green-800',
+      professional: 'bg-purple-100 text-purple-800',
+      enterprise: 'bg-orange-100 text-orange-800',
+    };
+    
+    return (
+      <Badge className={planColors[planName as keyof typeof planColors] || 'bg-gray-100 text-gray-800'}>
+        {planName.charAt(0).toUpperCase() + planName.slice(1)}
+      </Badge>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <RefreshCw className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -109,70 +213,188 @@ export default function SubscriptionManagementPage() {
             <p className="text-muted-foreground">Manage subscription plans and billing</p>
           </div>
         </div>
-        <Button onClick={() => { fetchOrganizations(); fetchDashboardStats(); }} variant="outline" className="gap-2">
-          <RefreshCw className={`w-4 h-4 ${(loading || statsLoading) ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={fetchData} variant="outline">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+          <Dialog open={showCreatePlan} onOpenChange={setShowCreatePlan}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Create Plan
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{editingPlan ? 'Edit' : 'Create'} Subscription Plan</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Plan Type</Label>
+                    <Select value={planData.name} onValueChange={(value) => setPlanData({...planData, name: value})}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select plan type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="trial">Trial</SelectItem>
+                        <SelectItem value="basic">Basic</SelectItem>
+                        <SelectItem value="professional">Professional</SelectItem>
+                        <SelectItem value="enterprise">Enterprise</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Display Name</Label>
+                    <Input value={planData.display_name} onChange={(e) => setPlanData({...planData, display_name: e.target.value})} placeholder="e.g., Professional Plan" />
+                  </div>
+                </div>
+                
+                <div>
+                  <Label>Pricing Tiers</Label>
+                  {planData.pricing_tiers.map((tier, index) => (
+                    <div key={index} className="flex gap-2 items-center">
+                      <Select value={tier.cycle} onValueChange={(value) => {
+                        const newTiers = [...planData.pricing_tiers];
+                        newTiers[index].cycle = value;
+                        setPlanData({...planData, pricing_tiers: newTiers});
+                      }}>
+                        <SelectTrigger className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="monthly">Monthly</SelectItem>
+                          <SelectItem value="quarterly">3 Months</SelectItem>
+                          <SelectItem value="half-yearly">6 Months</SelectItem>
+                          <SelectItem value="yearly">1 Year</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input 
+                        type="number" 
+                        placeholder="Price" 
+                        value={tier.price} 
+                        onChange={(e) => {
+                          const newTiers = [...planData.pricing_tiers];
+                          newTiers[index].price = e.target.value;
+                          setPlanData({...planData, pricing_tiers: newTiers});
+                        }} 
+                      />
+                      <Button type="button" variant="outline" size="sm" onClick={() => {
+                        const newTiers = planData.pricing_tiers.filter((_, i) => i !== index);
+                        setPlanData({...planData, pricing_tiers: newTiers});
+                      }}>Remove</Button>
+                    </div>
+                  ))}
+                  <Button type="button" variant="outline" size="sm" onClick={() => {
+                    setPlanData({...planData, pricing_tiers: [...planData.pricing_tiers, { cycle: 'monthly', price: '' }]});
+                  }}>+ Add Pricing Tier</Button>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label>Max Users</Label>
+                    <Input type="number" value={planData.max_users} onChange={(e) => setPlanData({...planData, max_users: e.target.value})} placeholder="50" />
+                  </div>
+                  <div>
+                    <Label>Max Organizations</Label>
+                    <Input type="number" value={planData.max_organizations} onChange={(e) => setPlanData({...planData, max_organizations: e.target.value})} placeholder="5" />
+                  </div>
+                  <div>
+                    <Label>Max Branches</Label>
+                    <Input type="number" value={planData.max_branches} onChange={(e) => setPlanData({...planData, max_branches: e.target.value})} placeholder="10" />
+                  </div>
+                </div>
+                
+                <div>
+                  <Label>Features</Label>
+                  {planData.features.map((feature, index) => (
+                    <div key={index} className="flex gap-2 items-center mb-2">
+                      <Input 
+                        value={feature} 
+                        onChange={(e) => {
+                          const newFeatures = [...planData.features];
+                          newFeatures[index] = e.target.value;
+                          setPlanData({...planData, features: newFeatures});
+                        }} 
+                        placeholder="Enter feature" 
+                      />
+                      <Button type="button" variant="outline" size="sm" onClick={() => {
+                        const newFeatures = planData.features.filter((_, i) => i !== index);
+                        setPlanData({...planData, features: newFeatures});
+                      }}>Remove</Button>
+                    </div>
+                  ))}
+                  <Button type="button" variant="outline" size="sm" onClick={() => {
+                    setPlanData({...planData, features: [...planData.features, '']});
+                  }}>+ Add Feature</Button>
+                </div>
+                <div className="flex justify-end space-x-2">
+                  <Button variant="outline" onClick={() => {
+                    setShowCreatePlan(false);
+                    setEditingPlan(null);
+                    setPlanData({ name: '', display_name: '', pricing_tiers: [{ cycle: 'monthly', price: '' }], max_users: '', max_organizations: '', max_branches: '', features: [''] });
+                  }}>Cancel</Button>
+                  <Button onClick={handleCreatePlan}>{editingPlan ? 'Update' : 'Create'} Plan</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
-      {/* Subscription Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Building2 className="w-4 h-4" />
-              Total Organizations
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {statsLoading ? '...' : (dashboardStats?.total_organizations || organizations.length)}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Stats Cards */}
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Total Organizations</p>
+                  <p className="text-2xl font-bold">{stats.total_organizations}</p>
+                </div>
+                <Building className="h-8 w-8 text-blue-600" />
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <CreditCard className="w-4 h-4" />
-              Active Subscriptions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {statsLoading ? '...' : (dashboardStats?.active_subscriptions || 0)}
-            </div>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Active Subscriptions</p>
+                  <p className="text-2xl font-bold">{stats.active_subscriptions}</p>
+                </div>
+                <Users className="h-8 w-8 text-green-600" />
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <DollarSign className="w-4 h-4" />
-              Monthly Revenue
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {statsLoading ? '...' : `₹${(dashboardStats?.monthly_revenue || 0).toLocaleString('en-IN')}`}
-            </div>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Monthly Revenue</p>
+                  <p className="text-2xl font-bold">{formatCurrency(stats.monthly_revenue)}</p>
+                </div>
+                <DollarSign className="h-8 w-8 text-purple-600" />
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <TrendingUp className="w-4 h-4" />
-              Growth Rate
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {statsLoading ? '...' : `${dashboardStats?.growth_percentage || 0}%`}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Growth Rate</p>
+                  <p className="text-2xl font-bold">{stats.growth_rate}%</p>
+                </div>
+                <TrendingUp className="h-8 w-8 text-orange-600" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Tabs defaultValue="plans" className="space-y-6">
         <TabsList>
@@ -181,137 +403,167 @@ export default function SubscriptionManagementPage() {
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="plans" className="space-y-6">
+        {/* Subscription Plans Tab */}
+        <TabsContent value="plans">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {subscriptionPlans.map((plan) => (
-              <Card key={plan.name} className="relative">
+            {(plans || []).map((plan) => (
+              <Card key={plan.id} className="relative">
                 <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    {plan.name}
-                    <Badge className={getSubscriptionBadgeColor(plan.name.toLowerCase())}>
-                      {plan.name}
-                    </Badge>
-                  </CardTitle>
-                  <div className="text-3xl font-bold">
-                    {plan.price}
-                    <span className="text-sm font-normal text-muted-foreground">/{plan.period}</span>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <CardTitle className="text-lg">{plan.display_name}</CardTitle>
+                      {getPlanBadge(plan.name)}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <ul className="space-y-2">
-                    {plan.features.map((feature, index) => (
-                      <li key={index} className="text-sm flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-                  <Button className="w-full mt-4" variant="outline">
-                    Manage Plan
-                  </Button>
+                  <div className="space-y-4">
+                    <div>
+                      {plan.pricing_tiers && plan.pricing_tiers.length > 0 ? (
+                        <div className="space-y-1">
+                          {plan.pricing_tiers.map((tier: any, index: number) => (
+                            <div key={index} className="text-sm">
+                              <span className="font-bold">{formatCurrency(parseFloat(tier.price))}</span>
+                              <span className="text-gray-600">/{tier.cycle}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div>
+                          <span className="text-3xl font-bold">{formatCurrency(plan.price)}</span>
+                          <span className="text-gray-600">/{plan.billing_cycle}</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="space-y-2">
+                      {plan.max_users && (
+                        <p className="text-sm text-gray-600">Up to {plan.max_users} users</p>
+                      )}
+                      {plan.max_organizations && (
+                        <p className="text-sm text-gray-600">{plan.max_organizations} organizations</p>
+                      )}
+                      {plan.features.map((feature, index) => (
+                        <p key={index} className="text-sm text-gray-600">• {feature}</p>
+                      ))}
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <Button className="flex-1" variant="outline" onClick={() => handleEditPlan(plan)}>Edit</Button>
+                      <Button className="flex-1" variant="destructive" onClick={() => handleDeletePlan(plan.id)}>Delete</Button>
+                    </div>
+                    <Button 
+                      className="w-full mt-2" 
+                      variant={plan.is_active ? "secondary" : "default"}
+                      onClick={() => handleToggleStatus(plan.id)}
+                    >
+                      {plan.is_active ? 'Deactivate' : 'Activate'}
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}
           </div>
         </TabsContent>
 
-        <TabsContent value="organizations" className="space-y-6">
+        {/* Organization Subscriptions Tab */}
+        <TabsContent value="organizations">
           <Card>
             <CardHeader>
               <CardTitle>Organization Subscriptions</CardTitle>
             </CardHeader>
             <CardContent>
-              {loading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin mr-2" />
-                  <span>Loading organizations...</span>
-                </div>
-              ) : organizations.length === 0 ? (
-                <div className="text-center py-8">
-                  <Building2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium">No organizations found</h3>
-                  <p className="text-muted-foreground">Organizations will appear here once they are created.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {organizations.map((org) => (
-                    <div key={org.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                          <Building2 className="w-5 h-5 text-primary" />
-                        </div>
-                        <div>
-                          <div className="font-medium">{org.name}</div>
-                          <div className="text-sm text-muted-foreground">
-                            Created {new Date(org.created_at).toLocaleDateString()}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <Badge className={getSubscriptionBadgeColor(org.subscription_plan)}>
-                          {org.subscription_plan || 'Trial'}
-                        </Badge>
-                        <Badge variant={org.status === 'active' ? 'default' : 'secondary'}>
-                          {org.status}
-                        </Badge>
-                        <Button variant="outline" size="sm">
-                          Manage
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-2">Organization</th>
+                      <th className="text-left p-2">Plan</th>
+                      <th className="text-left p-2">Status</th>
+                      <th className="text-left p-2">Start Date</th>
+                      <th className="text-left p-2">End Date</th>
+                      <th className="text-left p-2">Auto Renew</th>
+                      <th className="text-left p-2">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(subscriptions || []).map((subscription) => (
+                      <tr key={subscription.id} className="border-b">
+                        <td className="p-2">{subscription.organization_name}</td>
+                        <td className="p-2">{getPlanBadge(subscription.plan_details.name)}</td>
+                        <td className="p-2">{getStatusBadge(subscription.status)}</td>
+                        <td className="p-2">{new Date(subscription.start_date).toLocaleDateString()}</td>
+                        <td className="p-2">{new Date(subscription.end_date).toLocaleDateString()}</td>
+                        <td className="p-2">
+                          <Badge variant={subscription.auto_renew ? "default" : "secondary"}>
+                            {subscription.auto_renew ? "Yes" : "No"}
+                          </Badge>
+                        </td>
+                        <td className="p-2">
+                          <Button size="sm" variant="outline">
+                            Manage
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="analytics" className="space-y-6">
+        {/* Analytics Tab */}
+        <TabsContent value="analytics">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Subscription Distribution</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {statsLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-6 h-6 animate-spin mr-2" />
-                    <span>Loading analytics...</span>
+            {/* Subscription Distribution */}
+            {stats && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Subscription Distribution</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {Object.entries(stats.subscription_distribution).map(([plan, count]) => (
+                      <div key={plan} className="flex justify-between items-center">
+                        <div className="flex items-center space-x-2">
+                          {getPlanBadge(plan)}
+                          <span className="capitalize">{plan}</span>
+                        </div>
+                        <span className="font-semibold">{count}</span>
+                      </div>
+                    ))}
                   </div>
-                ) : (
-                  [
-                    { tier: 'Enterprise', count: dashboardStats?.subscription_distribution?.enterprise || 0, revenue: (dashboardStats?.subscription_distribution?.enterprise || 0) * 50000, color: 'destructive' },
-                    { tier: 'Professional', count: dashboardStats?.subscription_distribution?.professional || 0, revenue: (dashboardStats?.subscription_distribution?.professional || 0) * 15000, color: 'default' },
-                    { tier: 'Basic', count: dashboardStats?.subscription_distribution?.basic || 0, revenue: (dashboardStats?.subscription_distribution?.basic || 0) * 5000, color: 'outline' },
-                    { tier: 'Trial', count: dashboardStats?.subscription_distribution?.trial || 0, revenue: 0, color: 'secondary' }
-                  ].map((sub) => (
-                    <div key={sub.tier} className="flex items-center justify-between p-3 border">
-                      <div className="flex items-center gap-3">
-                        <Badge variant={sub.color as any}>{sub.tier}</Badge>
-                        <span className="font-medium">{sub.count} organizations</span>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-medium">₹{(sub.revenue / 100000).toFixed(1)}L</div>
-                        <div className="text-xs text-muted-foreground">per month</div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Revenue Trends</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8">
-                  <TrendingUp className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium">Revenue Analytics</h3>
-                  <p className="text-muted-foreground">Detailed revenue analytics coming soon</p>
-                </div>
-              </CardContent>
-            </Card>
+            {/* Recent Subscriptions */}
+            {stats && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent Subscriptions</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {(stats.recent_subscriptions || []).map((subscription) => (
+                      <div key={subscription.id} className="flex justify-between items-center p-3 border rounded">
+                        <div>
+                          <p className="font-medium">{subscription.organization_name}</p>
+                          <p className="text-sm text-gray-600">{subscription.plan_details.display_name}</p>
+                        </div>
+                        <div className="text-right">
+                          {getStatusBadge(subscription.status)}
+                          <p className="text-sm text-gray-600 mt-1">
+                            {new Date(subscription.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </TabsContent>
       </Tabs>

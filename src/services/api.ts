@@ -1047,5 +1047,130 @@ export const patientsAPI = {
   },
 };
 
+// Subscription API
+export const subscriptionAPI = {
+  getPlans: async (): Promise<ApiResponse<any[]>> => {
+    const response = await api.get('/organizations/subscription-plans/');
+    return {
+      success: true,
+      data: response.data.results || response.data,
+      message: 'Subscription plans retrieved successfully'
+    };
+  },
+
+  getSubscriptions: async (params?: Record<string, any>): Promise<ApiResponse<{results: any[], count: number}>> => {
+    const response = await api.get('/organizations/subscriptions/', { params });
+    
+    if (response.data && response.data.results) {
+      return {
+        success: true,
+        data: {
+          results: response.data.results,
+          count: response.data.count
+        },
+        message: `Found ${response.data.count} subscriptions`
+      };
+    }
+    
+    return {
+      success: true,
+      data: { results: response.data, count: response.data.length },
+      message: 'Subscriptions retrieved successfully'
+    };
+  },
+
+  getSubscription: async (id: number): Promise<ApiResponse<any>> => {
+    const response = await api.get(`/organizations/subscriptions/${id}/`);
+    return {
+      success: true,
+      data: response.data,
+      message: 'Subscription retrieved successfully'
+    };
+  },
+
+  createSubscription: async (subscriptionData: any): Promise<ApiResponse<any>> => {
+    const response = await api.post('/organizations/create-subscription/', subscriptionData);
+    return {
+      success: true,
+      data: response.data.subscription,
+      message: response.data.message || 'Subscription created successfully'
+    };
+  },
+
+  updateSubscription: async (id: number, subscriptionData: any): Promise<ApiResponse<any>> => {
+    const response = await api.patch(`/organizations/subscriptions/${id}/`, subscriptionData);
+    return {
+      success: true,
+      data: response.data,
+      message: 'Subscription updated successfully'
+    };
+  },
+
+  deleteSubscription: async (id: number): Promise<ApiResponse> => {
+    const response = await api.delete(`/organizations/subscriptions/${id}/`);
+    return {
+      success: true,
+      message: 'Subscription deleted successfully'
+    };
+  },
+
+  getStats: async (): Promise<ApiResponse<any>> => {
+    const response = await api.get('/organizations/subscription-stats/');
+    return {
+      success: true,
+      data: response.data,
+      message: 'Subscription statistics retrieved successfully'
+    };
+  },
+
+  updateOrganizationPlan: async (organizationId: number, planData: { plan: string }): Promise<ApiResponse<any>> => {
+    const response = await api.post(`/organizations/${organizationId}/update-plan/`, planData);
+    return {
+      success: true,
+      data: response.data,
+      message: response.data.message || 'Organization plan updated successfully'
+    };
+  },
+
+  createPlan: async (planData: any): Promise<ApiResponse<any>> => {
+    const response = await api.post('/organizations/subscription-plans/', planData);
+    return {
+      success: true,
+      data: response.data,
+      message: 'Subscription plan created successfully'
+    };
+  },
+
+  updatePlan: async (id: number, planData: any): Promise<ApiResponse<any>> => {
+    const response = await api.put(`/organizations/subscription-plans/${id}/`, planData);
+    return {
+      success: true,
+      data: response.data,
+      message: 'Subscription plan updated successfully'
+    };
+  },
+
+  deletePlan: async (id: number): Promise<ApiResponse<any>> => {
+    const response = await api.delete(`/organizations/subscription-plans/${id}/`);
+    return {
+      success: true,
+      data: response.data,
+      message: 'Subscription plan deleted successfully'
+    };
+  },
+
+  togglePlanStatus: async (id: number): Promise<ApiResponse<any>> => {
+    const response = await api.post(`/organizations/subscription-plans/${id}/toggle-status/`);
+    return {
+      success: true,
+      data: response.data,
+      message: response.data.message || 'Plan status updated successfully'
+    };
+  },
+};
+
 // Export the axios instance for direct use if needed
 export default api;
+
+// Also export as apiClient for the subscription service
+export const apiClient = api;

@@ -51,6 +51,7 @@ export default function UserManagement() {
   const [selectedUser, setSelectedUser] = useState<UserType | null>(null);
   const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [newUser, setNewUser] = useState({
@@ -86,6 +87,9 @@ export default function UserManagement() {
   // Get current user organization
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
   const userOrganizationId = currentUser?.organization_id;
+
+  // Get current user role
+  const currentUserRole = currentUser?.role;
 
   // Load users and branches on component mount
   useEffect(() => {
@@ -250,7 +254,7 @@ export default function UserManagement() {
   };
 
   const handleAddUser = async () => {
-    if (!newUser.first_name || !newUser.last_name || !newUser.email || !newUser.username || !newUser.password || !newUser.role) {
+    if (!newUser.first_name || !newUser.last_name || !newUser.email || !newUser.username || !newUser.role) {
       toast({
         title: "Error",
         description: "Please fill all required fields",
@@ -259,8 +263,8 @@ export default function UserManagement() {
       return;
     }
 
-    // Validate password confirmation
-    if (newUser.password !== newUser.password_confirm) {
+    // Validate password confirmation only for new users
+    if (!isEditMode && newUser.password !== newUser.password_confirm) {
       toast({
         title: "Error",
         description: "Passwords do not match",
@@ -271,7 +275,7 @@ export default function UserManagement() {
 
     // Check if user is superuser
     const isSuperUser = currentUser?.role === 'super_admin';
-    
+
     // Branch validation for non-superusers
     if (!isSuperUser) {
       // Check if branches exist
@@ -296,7 +300,7 @@ export default function UserManagement() {
           return;
         }
       }
-      
+
       // After ensuring branches exist, validate branch selection
       if (!newUser.branch_id) {
         // If no branch selected, auto-select the first available branch (main branch)
@@ -317,7 +321,7 @@ export default function UserManagement() {
     try {
       setCreatingUser(true);
 
-      const userData = {
+      const userData: any = {
         ...newUser,
         organization_id: userOrganizationId,
         status: 'active',
@@ -325,27 +329,44 @@ export default function UserManagement() {
         ...(isSuperUser ? {} : newUser.branch_id ? { branch_id: parseInt(newUser.branch_id) } : {})
       };
 
-      const response = await usersAPI.createUser(userData);
+      // Remove password fields for updates if empty
+      if (isEditMode && !userData.password) {
+        delete userData.password;
+        delete userData.password_confirm;
+      }
+
+      let response;
+      if (isEditMode && selectedUser) {
+        // Update existing user
+        response = await usersAPI.updateUser(selectedUser.id, userData);
+      } else {
+        // Create new user
+        response = await usersAPI.createUser(userData);
+      }
 
       if (response.success) {
         toast({
           title: "Success",
-          description: `${newUser.first_name} ${newUser.last_name} has been added successfully`,
+          description: isEditMode
+            ? `${newUser.first_name} ${newUser.last_name} has been updated successfully`
+            : `${newUser.first_name} ${newUser.last_name} has been added successfully`,
         });
         setIsDialogOpen(false);
         resetNewUser();
+        setIsEditMode(false);
+        setSelectedUser(null);
         loadUsers();
       } else {
         toast({
           title: "Error",
-          description: response.error || "Failed to create user",
+          description: response.error || `Failed to ${isEditMode ? 'update' : 'create'} user`,
           variant: "destructive",
         });
       }
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.response?.data?.error || "Failed to create user",
+        description: error.response?.data?.error || `Failed to ${isEditMode ? 'update' : 'create'} user`,
         variant: "destructive",
       });
     } finally {
@@ -413,11 +434,21 @@ export default function UserManagement() {
   };
 
   const handleEditUser = (user: UserType) => {
-    // For now, just show a toast. In a full implementation, this would open an edit dialog
-    toast({
-      title: "Edit User",
-      description: `Edit functionality for ${user.first_name} ${user.last_name} - Coming soon!`,
+    // Set user for editing
+    setSelectedUser(user);
+    setNewUser({
+      first_name: user.first_name,
+      last_name: user.last_name,
+      email: user.email,
+      username: (user as any).username || user.email,
+      password: '',
+      password_confirm: '',
+      role: user.role,
+      phone: user.phone || '',
+      branch_id: user.branch_id?.toString() || ''
     });
+    setIsEditMode(true);
+    setIsDialogOpen(true);
   };
 
   const openPermissionDialog = (user: UserType) => {
@@ -429,85 +460,32 @@ export default function UserManagement() {
   const loadUserPermissions = async (user: UserType) => {
     setLoadingPermissions(true);
     try {
-      let allowedModules: ModulePermission[] = [];
-      
-      // For supplier admin users, don't filter by pharmacy owner permissions
-      if (user.role === 'supplier_admin' || user.role === 'sales_representative') {
-        // Load user's permissions directly without pharmacy owner filtering
-        console.log('Loading permissions for supplier admin user:', user.id, user.first_name, user.last_name);
-        const userPermissionsResponse = await usersAPI.getUserModulePermissions(user.id);
-        console.log('Supplier admin permissions API response:', userPermissionsResponse);
-
-        // Handle API response - try multiple possible response formats
-        let userModules: ModulePermission[] = [];
-
-        if (userPermissionsResponse.success && userPermissionsResponse.data) {
-          userModules = userPermissionsResponse.data.modules || [];
-          console.log('Supplier admin has existing permissions (success+data):', userModules);
-        } else if (userPermissionsResponse.data && Array.isArray((userPermissionsResponse.data as any))) {
-          userModules = userPermissionsResponse.data as ModulePermission[];
-          console.log('Supplier admin has direct array permissions:', userModules);
-        } else if ((userPermissionsResponse as any).modules && Array.isArray((userPermissionsResponse as any).modules)) {
-          userModules = (userPermissionsResponse as any).modules;
-          console.log('Supplier admin has direct modules permissions:', userModules);
-        } else {
-          console.log('Supplier admin has no existing permissions or API error');
-          userModules = [];
-        }
-
-        setUserModules(userModules);
-
-        // Convert to permissions object for checkboxes
-        const permissions: Record<string, boolean> = {};
-        userModules.forEach((module: ModulePermission) => {
-          permissions[module.id] = module.has_access;
-          module.sub_modules.forEach((subModule: SubModulePermission) => {
-            permissions[subModule.id] = subModule.has_access;
-          });
-        });
-
-        setUserPermissions(permissions);
-        setAvailableModules(userModules);
-        return;
-      }
-      
-      // For other users, use pharmacy owner filtering
       // First, find the latest pharmacy_owner for this organization
       const allUsersResponse = await usersAPI.getUsers();
-      if (!allUsersResponse.success || !allUsersResponse.data) {
+      console.log('All users response:', allUsersResponse);
+      
+      let allUsers: UserType[] = [];
+      if (allUsersResponse.success && allUsersResponse.data) {
+        allUsers = allUsersResponse.data;
+      } else if (Array.isArray(allUsersResponse)) {
+        allUsers = allUsersResponse;
+      } else {
         throw new Error('Failed to load users');
       }
 
       // Filter users by organization and find pharmacy_owners
-      const orgUsers = allUsersResponse.data.filter((u: UserType) =>
+      const orgUsers = allUsers.filter((u: UserType) =>
         u.organization_id === userOrganizationId
       );
+      console.log('Organization users:', orgUsers);
 
       const pharmacyOwners = orgUsers.filter((u: UserType) =>
         u.role === 'pharmacy_owner'
       ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      console.log('Pharmacy owners found:', pharmacyOwners);
 
       const latestPharmacyOwner = pharmacyOwners[0];
-
-      if (!latestPharmacyOwner) {
-        toast({
-          title: 'Error',
-          description: 'No pharmacy owner found for this organization',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      // Get the pharmacy owner's permissions to determine which modules are allowed
-      const ownerPermissionsResponse = await usersAPI.getUserModulePermissions(latestPharmacyOwner.id);
-      if (!ownerPermissionsResponse.success || !ownerPermissionsResponse.data) {
-        throw new Error('Failed to load pharmacy owner permissions');
-      }
-
-      // Get only modules that pharmacy owner has access to (has_access: true)
-      const ownerModules = ownerPermissionsResponse.data.modules || [];
-      allowedModules = ownerModules.filter((module: ModulePermission) => module.has_access);
-      console.log('Pharmacy owner allowed modules:', allowedModules);
+      console.log('Latest pharmacy owner:', latestPharmacyOwner);
 
       // Load the current user's specific permissions
       console.log('Loading permissions for user:', user.id, user.first_name, user.last_name);
@@ -517,12 +495,25 @@ export default function UserManagement() {
       // Handle API response - try multiple possible response formats
       let userModules: ModulePermission[] = [];
 
+      console.log('Raw userPermissionsResponse.data:', userPermissionsResponse.data);
+      
       if (userPermissionsResponse.success && userPermissionsResponse.data) {
-        userModules = userPermissionsResponse.data.modules || [];
-        console.log('User has existing permissions (success+data):', userModules);
-      } else if (userPermissionsResponse.data && Array.isArray((userPermissionsResponse.data as any))) {
-        userModules = userPermissionsResponse.data as ModulePermission[];
-        console.log('User has direct array permissions:', userModules);
+        // Handle nested response structure: {success: true, data: {success: true, data: {modules: [...]}}}
+        let actualData = userPermissionsResponse.data;
+        if (actualData.success && actualData.data) {
+          actualData = actualData.data;
+        }
+        
+        if (actualData.modules && Array.isArray(actualData.modules)) {
+          userModules = actualData.modules;
+          console.log('User has existing permissions (nested structure):', userModules);
+        } else if (Array.isArray(actualData)) {
+          userModules = actualData;
+          console.log('User has direct array permissions:', userModules);
+        } else {
+          console.log('User permissions data format not recognized:', actualData);
+          userModules = [];
+        }
       } else if ((userPermissionsResponse as any).modules && Array.isArray((userPermissionsResponse as any).modules)) {
         userModules = (userPermissionsResponse as any).modules;
         console.log('User has direct modules permissions:', userModules);
@@ -532,6 +523,69 @@ export default function UserManagement() {
       }
 
       console.log('Final extracted userModules:', userModules);
+      
+      // If no pharmacy owner found, show user's current permissions without filtering
+      if (!latestPharmacyOwner) {
+        console.log('No pharmacy owner found, showing user modules without filtering');
+        setUserModules(userModules);
+        
+        // Convert to permissions object for checkboxes
+        const permissions: Record<string, boolean> = {};
+        userModules.forEach((module: ModulePermission) => {
+          permissions[module.id] = module.has_access;
+          module.sub_modules.forEach((subModule: SubModulePermission) => {
+            permissions[subModule.id] = subModule.has_access;
+          });
+        });
+        
+        console.log('Setting userPermissions to:', permissions);
+        setUserPermissions(permissions);
+        setAvailableModules(userModules);
+        return;
+      }
+
+      // Get the pharmacy owner's permissions to determine which modules are allowed
+      const ownerPermissionsResponse = await usersAPI.getUserModulePermissions(latestPharmacyOwner.id);
+      console.log('Owner permissions response:', ownerPermissionsResponse);
+      console.log('Raw ownerPermissionsResponse.data:', ownerPermissionsResponse.data);
+      
+      let ownerModules: ModulePermission[] = [];
+      if (ownerPermissionsResponse.success && ownerPermissionsResponse.data) {
+        // Handle nested response structure: {success: true, data: {success: true, data: {modules: [...]}}}
+        let actualOwnerData = ownerPermissionsResponse.data;
+        if (actualOwnerData.success && actualOwnerData.data) {
+          actualOwnerData = actualOwnerData.data;
+        }
+        
+        if (actualOwnerData.modules && Array.isArray(actualOwnerData.modules)) {
+          ownerModules = actualOwnerData.modules;
+          console.log('Owner has modules (nested structure):', ownerModules);
+        } else if (Array.isArray(actualOwnerData)) {
+          ownerModules = actualOwnerData;
+          console.log('Owner has direct array:', ownerModules);
+        } else {
+          console.log('Owner permissions data format not recognized:', actualOwnerData);
+          ownerModules = [];
+        }
+      } else if ((ownerPermissionsResponse as any).modules) {
+        ownerModules = (ownerPermissionsResponse as any).modules;
+        console.log('Owner has direct modules:', ownerModules);
+      }
+      
+      console.log('Final owner modules:', ownerModules);
+      
+      // Get only modules that pharmacy owner has access to (has_access: true)
+      const allowedModules = ownerModules.filter((module: ModulePermission) => module.has_access);
+      console.log('Pharmacy owner allowed modules:', allowedModules);
+
+      // If pharmacy owner has no allowed modules, show empty list
+      if (allowedModules.length === 0) {
+        console.log('Pharmacy owner has no allowed modules, showing empty list');
+        setUserModules([]);
+        setUserPermissions({});
+        setAvailableModules([]);
+        return;
+      }
 
       // Create modules structure based on pharmacy owner's allowed modules
       const userModulesWithPermissions = allowedModules.map((allowedModule: ModulePermission) => {
@@ -540,13 +594,11 @@ export default function UserManagement() {
 
         if (userModule) {
           // Filter submodules to only show those allowed by pharmacy owner
-          let filteredSubModules = userModule.sub_modules.filter((userSubModule: SubModulePermission) =>
+          const filteredSubModules = userModule.sub_modules.filter((userSubModule: SubModulePermission) =>
             allowedModule.sub_modules.some((ownerSubModule: SubModulePermission) => 
               ownerSubModule.id === userSubModule.id && ownerSubModule.has_access
             )
           );
-
-
 
           return {
             ...userModule,
@@ -554,9 +606,7 @@ export default function UserManagement() {
           };
         } else {
           // Create default structure with only allowed submodules
-          let allowedSubModules = allowedModule.sub_modules.filter((subModule: SubModulePermission) => subModule.has_access);
-          
-
+          const allowedSubModules = allowedModule.sub_modules.filter((subModule: SubModulePermission) => subModule.has_access);
           
           return {
             ...allowedModule,
@@ -570,6 +620,7 @@ export default function UserManagement() {
       });
 
       console.log('Final user modules with permissions:', userModulesWithPermissions);
+      console.log('Setting userModules state to:', userModulesWithPermissions);
 
       setUserModules(userModulesWithPermissions);
 
@@ -687,7 +738,9 @@ export default function UserManagement() {
   };
 
   const getFilteredModules = () => {
-    return userModules;
+    console.log('getFilteredModules called, userModules length:', userModules?.length);
+    console.log('getFilteredModules userModules:', userModules);
+    return userModules || [];
   };
 
   const openPasswordChangeDialog = (user: UserType) => {
@@ -770,9 +823,9 @@ export default function UserManagement() {
             </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add New User</DialogTitle>
+              <DialogTitle>{isEditMode ? 'Edit User' : 'Add New User'}</DialogTitle>
               <DialogDescription>
-                Create a new user account with role-based permissions
+                {isEditMode ? 'Update user information and permissions' : 'Create a new user account with role-based permissions'}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -931,10 +984,12 @@ export default function UserManagement() {
               <Button variant="outline" onClick={() => {
                 setIsDialogOpen(false);
                 resetNewUser();
+                setIsEditMode(false);
+                setSelectedUser(null);
               }}>Cancel</Button>
               <Button onClick={handleAddUser} disabled={creatingUser || loadingBranches}>
                 {creatingUser && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Add User
+                {isEditMode ? 'Update User' : 'Add User'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1010,20 +1065,9 @@ export default function UserManagement() {
               <DialogTitle>Module Permissions</DialogTitle>
               <DialogDescription>
                   Manage module permissions for {selectedUser?.first_name} {selectedUser?.last_name}
-                  {selectedUser?.role === 'supplier_admin' || selectedUser?.role === 'sales_representative' ? (
-                    <span className="block text-sm text-green-600 mt-1">
-                      Supplier users have independent permissions not limited by pharmacy owner
-                    </span>
-                  ) : (
-                    <span className="block text-sm text-amber-600 mt-1">
-                      Only modules permitted to the latest pharmacy owner are shown
-                    </span>
-                  )}
-                  {selectedUser?.role === 'pharmacy_owner' && (
-                    <span className="block text-sm text-blue-600 mt-1">
-                      Pharmacy owner permissions are managed by the system administrator
-                    </span>
-                  )}
+                  <span className="block text-sm text-amber-600 mt-1">
+                    Only modules permitted to the latest pharmacy owner are shown
+                  </span>
                 </DialogDescription>
             </DialogHeader>
             <div className="space-y-6">
@@ -1033,47 +1077,52 @@ export default function UserManagement() {
                 </div>
               ) : (
                 <>
-                  {getFilteredModules().length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-gray-600">No modules available for this user.</p>
-                    </div>
-                  ) : (
-                    getFilteredModules().map((module) => (
-                      <div key={module.id} className="border rounded-lg p-4">
-                        <div className="flex items-center space-x-3 mb-4">
-                          <input
-                            type="checkbox"
-                            id={module.id}
-                            checked={userPermissions[module.id] || false}
-                            onChange={(e) => handlePermissionChange(module.id, e.target.checked)}
-                            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <label htmlFor={module.id} className="text-lg font-medium text-gray-900">
-                            {module.name}
-                          </label>
-                        </div>
+                  {(() => {
+                    const modules = getFilteredModules();
+                    console.log('Rendering modules, count:', modules?.length);
+                    console.log('Modules to render:', modules);
+                    return modules?.length === 0 ? (
+                      <div className="text-center py-8">
+                        <p className="text-gray-600">No modules available for this user.</p>
+                      </div>
+                    ) : (
+                      modules?.map((module) => (
+                        <div key={module.id} className="border rounded-lg p-4">
+                          <div className="flex items-center space-x-3 mb-4">
+                            <input
+                              type="checkbox"
+                              id={module.id}
+                              checked={userPermissions[module.id] || false}
+                              onChange={(e) => handlePermissionChange(module.id, e.target.checked)}
+                              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <label htmlFor={module.id} className="text-lg font-medium text-gray-900">
+                              {module.name}
+                            </label>
+                          </div>
 
-                        <div className="ml-7">
-                          <div className="flex flex-wrap gap-4">
-                            {module.sub_modules.map((subModule) => (
-                              <div key={subModule.id} className="flex items-center space-x-2">
-                                <input
-                                  type="checkbox"
-                                  id={subModule.id}
-                                  checked={userPermissions[subModule.id] || false}
-                                  onChange={(e) => handlePermissionChange(subModule.id, e.target.checked)}
-                                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                                />
-                                <label htmlFor={subModule.id} className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                                  {subModule.name}
-                                </label>
-                              </div>
-                            ))}
+                          <div className="ml-7">
+                            <div className="flex flex-wrap gap-4">
+                              {module.sub_modules.map((subModule) => (
+                                <div key={subModule.id} className="flex items-center space-x-2">
+                                  <input
+                                    type="checkbox"
+                                    id={subModule.id}
+                                    checked={userPermissions[subModule.id] || false}
+                                    onChange={(e) => handlePermissionChange(subModule.id, e.target.checked)}
+                                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                                  />
+                                  <label htmlFor={subModule.id} className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                                    {subModule.name}
+                                  </label>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    );
+                  })()}
                 </>
               )}
             </div>
@@ -1256,11 +1305,21 @@ export default function UserManagement() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => openPermissionDialog(user)}
-                        title="Module Permissions"
+                        onClick={() => handleEditUser(user)}
+                        title="Edit User"
                       >
-                        <Settings className="w-4 h-4" />
+                        <Edit className="w-4 h-4" />
                       </Button>
+                      {currentUserRole === 'pharmacy_owner' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openPermissionDialog(user)}
+                          title="Module Permissions"
+                        >
+                          <Settings className="w-4 h-4" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"

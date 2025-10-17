@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Package, User, Lock, Stethoscope, Pill, Heart, Loader2, Eye, EyeOff } from "lucide-react";
+import heroImage from "@/assets/hero.png";
 import { useToast } from "@/hooks/use-toast";
-import { authAPI } from "@/services/api";
+import { authAPI, subscriptionAPI } from "@/services/api";
 import { getRoleDisplayName } from "@/data/mockData";
 
 export default function LoginModern() {
@@ -104,6 +105,7 @@ export default function LoginModern() {
       if (response.success && response.data) {
         const { user, tokens } = response.data;
 
+        // Store tokens temporarily for subscription check
         localStorage.setItem("access_token", tokens.access);
         localStorage.setItem("refresh_token", tokens.refresh);
         localStorage.setItem("currentUser", JSON.stringify(user));
@@ -112,6 +114,9 @@ export default function LoginModern() {
         if (user.organization_id) {
           localStorage.setItem("selectedOrganization", user.organization_id);
         }
+
+        // Skip subscription check for now - allow login
+        // TODO: Implement proper subscription validation after fixing API
 
         // Save credentials if remember me is checked
         if (rememberMe) {
@@ -155,55 +160,33 @@ export default function LoginModern() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-800 to-slate-900 flex relative overflow-hidden">
+    <div className="h-screen bg-gradient-to-br from-slate-800 to-slate-900 flex relative overflow-hidden">
       <canvas id="particles" className="absolute inset-0 pointer-events-none" />
       
       {/* Left Column - Medical Imagery */}
       <div className="hidden lg:flex lg:w-1/2 relative items-center justify-center p-12">
         <div className="relative z-10 text-center space-y-8">
-          {/* Medical Icons Arrangement */}
-          <div className="relative w-80 h-80 mx-auto">
-            {/* Center Logo */}
-            <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-20 h-20 backdrop-blur-sm rounded-full flex items-center justify-center transition-all duration-500 ${loading ? 'bg-white/40 scale-110 shadow-2xl shadow-white/20' : 'bg-white/20'}`}>
-              <Package className={`w-10 h-10 text-white transition-all duration-300 ${loading ? 'animate-pulse' : ''}`} />
-            </div>
-            
-            {/* Rotating Medical Icons Container */}
-            <div 
-              className={`absolute inset-0 transition-all duration-1000 ease-out ${loading ? 'animate-spin' : ''}`} 
-              style={{
-                animationDuration: loading ? '0.8s' : '2s',
-                animationTimingFunction: loading ? 'linear' : 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
-              }}
-            >
-              {/* Top Icon */}
-              <div className={`absolute top-8 left-1/2 transform -translate-x-1/2 w-16 h-16 backdrop-blur-sm rounded-full flex items-center justify-center transition-all duration-300 ${loading ? 'bg-blue-500/50 scale-110 shadow-lg shadow-blue-500/30' : 'bg-blue-500/30'}`}>
-                <Stethoscope className="w-8 h-8 text-white" />
-              </div>
-              {/* Right Icon */}
-              <div className={`absolute top-1/2 right-8 transform -translate-y-1/2 w-14 h-14 backdrop-blur-sm rounded-full flex items-center justify-center transition-all duration-300 ${loading ? 'bg-green-500/50 scale-110 shadow-lg shadow-green-500/30' : 'bg-green-500/30'}`}>
-                <Pill className="w-7 h-7 text-white" />
-              </div>
-              {/* Bottom Icon */}
-              <div className={`absolute bottom-8 left-1/2 transform -translate-x-1/2 w-16 h-16 backdrop-blur-sm rounded-full flex items-center justify-center transition-all duration-300 ${loading ? 'bg-red-500/50 scale-110 shadow-lg shadow-red-500/30' : 'bg-red-500/30'}`}>
-                <Heart className="w-8 h-8 text-white" />
-              </div>
-              {/* Left Icon */}
-              <div className={`absolute top-1/2 left-8 transform -translate-y-1/2 w-14 h-14 backdrop-blur-sm rounded-full flex items-center justify-center transition-all duration-300 ${loading ? 'bg-purple-500/50 scale-110 shadow-lg shadow-purple-500/30' : 'bg-purple-500/30'}`}>
-                <Package className="w-7 h-7 text-white" />
-              </div>
-            </div>
+          {/* Hero Image */}
+          <div className="relative w-96 h-96 mx-auto">
+            <img 
+              src={heroImage} 
+              alt="DrPharmas Hero" 
+              className="w-full h-full object-contain drop-shadow-2xl"
+            />
           </div>
           
           {/* Text Content */}
-          <div className="space-y-4">
-            <h1 className="text-4xl font-bold text-white">
-              drpharmas
+          <div className="space-y-6">
+            <h1 className="text-5xl font-extrabold text-white tracking-tight">
+              <span className="bg-gradient-to-r from-white to-blue-200 bg-clip-text text-transparent">
+                Dr
+              </span>
+              <span className="text-blue-300">
+                Pharmas
+              </span>
             </h1>
-            <p className="text-xl text-slate-300">
-              Advanced Healthcare Management
-            </p>
-            <p className="text-slate-400 max-w-md mx-auto">
+
+            <p className="text-slate-300 max-w-lg mx-auto text-lg leading-relaxed">
               Streamline your pharmacy operations with our comprehensive management system designed for modern healthcare providers.
             </p>
           </div>
@@ -218,7 +201,14 @@ export default function LoginModern() {
             <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto">
               <Package className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-white">drpharmas</h1>
+            <h1 className="text-3xl font-extrabold text-white tracking-tight">
+              <span className="bg-gradient-to-r from-white to-blue-200 bg-clip-text text-transparent">
+                Dr
+              </span>
+              <span className="text-blue-300">
+                Pharmas
+              </span>
+            </h1>
           </div>
           
           {/* Login Form */}

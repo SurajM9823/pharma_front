@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { ArrowLeft, Building2, MapPin, Phone, Mail, Globe, Calendar, CreditCard, Users, UserCheck, Eye, EyeOff, Plus, Loader2, Settings, Key, Power } from 'lucide-react';
-import { organizationsAPI, usersAPI, Organization, User, Branch } from '@/services/api';
+import { organizationsAPI, usersAPI, subscriptionAPI, Organization, User, Branch } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
 
 // Module Permission Data Structure (from backend)
@@ -35,6 +35,9 @@ export default function OrganizationDetailPage() {
   const [activeTab, setActiveTab] = useState('users');
   const [users, setUsers] = useState<User[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [subscriptionDetails, setSubscriptionDetails] = useState<any>(null);
+  const [subscriptionPlans, setSubscriptionPlans] = useState<any[]>([]);
+  const [loadingSubscription, setLoadingSubscription] = useState(false);
   const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('all');
   const [showCreateUserDialog, setShowCreateUserDialog] = useState(false);
   const [userLoading, setUserLoading] = useState(false);
@@ -78,6 +81,8 @@ export default function OrganizationDetailPage() {
       loadOrganization();
       loadUsers();
       loadBranches();
+      loadSubscriptionDetails();
+      loadSubscriptionPlans();
     }
   }, [id]);
 
@@ -132,7 +137,7 @@ export default function OrganizationDetailPage() {
   const loadBranches = async () => {
     try {
       setLoadingBranches(true);
-      const response = await organizationsAPI.getBranches();
+      const response = await organizationsAPI.getBranches({ organization: id });
       
       let allBranches: Branch[] = [];
       if (response.success && response.data) {
@@ -141,16 +146,85 @@ export default function OrganizationDetailPage() {
         allBranches = response;
       }
 
-      // Filter branches by current organization
-      const orgBranches = allBranches.filter((branch: Branch) =>
-        branch.organization === parseInt(id!)
-      );
-      setBranches(orgBranches);
+      setBranches(allBranches);
     } catch (error) {
       console.error('Failed to load branches:', error);
     } finally {
       setLoadingBranches(false);
     }
+  };
+
+  const loadSubscriptionDetails = async () => {
+    try {
+      setLoadingSubscription(true);
+      const response = await subscriptionAPI.getSubscriptions({
+        organization: id,
+        status: 'active'
+      });
+      
+      if (response.success && response.data) {
+        const subscriptions = response.data.results || response.data;
+        const activeSubscription = Array.isArray(subscriptions) 
+          ? subscriptions.find((sub: any) => sub.status === 'active')
+          : null;
+        setSubscriptionDetails(activeSubscription);
+      }
+    } catch (error) {
+      console.error('Failed to load subscription details:', error);
+    } finally {
+      setLoadingSubscription(false);
+    }
+  };
+
+  const loadSubscriptionPlans = async () => {
+    try {
+      const response = await subscriptionAPI.getPlans();
+      if (response.success && response.data) {
+        setSubscriptionPlans(Array.isArray(response.data) ? response.data : []);
+      }
+    } catch (error) {
+      console.error('Failed to load subscription plans:', error);
+    }
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'NPR',
+      minimumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const getDaysUntilExpiry = (endDate: string) => {
+    const end = new Date(endDate);
+    const now = new Date();
+    const diffTime = end.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  const getSubscriptionStatusBadge = (status: string, endDate?: string) => {
+    if (endDate) {
+      const daysLeft = getDaysUntilExpiry(endDate);
+      if (daysLeft <= 0) {
+        return <Badge className="bg-red-100 text-red-800">Expired</Badge>;
+      } else if (daysLeft <= 7) {
+        return <Badge className="bg-yellow-100 text-yellow-800">Expiring Soon</Badge>;
+      }
+    }
+    
+    const statusColors = {
+      active: 'bg-green-100 text-green-800',
+      inactive: 'bg-gray-100 text-gray-800',
+      expired: 'bg-red-100 text-red-800',
+      cancelled: 'bg-yellow-100 text-yellow-800',
+    };
+    
+    return (
+      <Badge className={statusColors[status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800'}>
+        {status.charAt(0).toUpperCase() + status.slice(1)}
+      </Badge>
+    );
   };
 
   const createDefaultBranch = async () => {
@@ -444,48 +518,40 @@ export default function OrganizationDetailPage() {
   };
 
   const handlePermissionChange = (permissionId: string, checked: boolean) => {
-    setUserPermissions(prev => ({
-      ...prev,
-      [permissionId]: checked
-    }));
-
-    // Handle hierarchical permissions
-    const module = userModules.find(m => m.id === permissionId);
-    if (module) {
-      if (checked) {
-        // If main module is checked, check all available sub-modules
-        const updatedPermissions = { ...userPermissions };
-        module.sub_modules.forEach(subModule => {
-          updatedPermissions[subModule.id] = true;
+    setUserPermissions(prev => {
+      const newPermissions = { ...prev, [permissionId]: checked };
+      
+      // Find if this is a main module
+      const mainModule = userModules.find(module => module.id === permissionId);
+      
+      if (mainModule && checked) {
+        // If checking a main module, auto-check all its sub-modules
+        mainModule.sub_modules.forEach(subModule => {
+          newPermissions[subModule.id] = true;
         });
-        setUserPermissions(updatedPermissions);
+      } else if (mainModule && !checked) {
+        // If unchecking a main module, auto-uncheck all its sub-modules
+        mainModule.sub_modules.forEach(subModule => {
+          newPermissions[subModule.id] = false;
+        });
       } else {
-        // If main module is unchecked, uncheck all sub-modules
-        const updatedPermissions = { ...userPermissions };
-        module.sub_modules.forEach(subModule => {
-          updatedPermissions[subModule.id] = false;
-        });
-        setUserPermissions(updatedPermissions);
-      }
-    } else {
-      // Handle sub-module changes - update main module state
-      const updatedPermissions = { ...userPermissions };
-      updatedPermissions[permissionId] = checked;
-
-      // Check if any sub-modules are still enabled for the parent module
-      const parentModule = userModules.find(m =>
-        m.sub_modules.some(sm => sm.id === permissionId)
-      );
-
-      if (parentModule) {
-        const hasAnySubModuleEnabled = parentModule.sub_modules.some(sm =>
-          updatedPermissions[sm.id] || (sm.id === permissionId && checked)
+        // If this is a sub-module, check if all sub-modules are checked to auto-check parent
+        const parentModule = userModules.find(module => 
+          module.sub_modules.some(sub => sub.id === permissionId)
         );
-        updatedPermissions[parentModule.id] = hasAnySubModuleEnabled;
+        
+        if (parentModule) {
+          const allSubModulesChecked = parentModule.sub_modules.every(sub => 
+            sub.id === permissionId ? checked : newPermissions[sub.id]
+          );
+          
+          // Auto-check/uncheck parent module based on sub-modules state
+          newPermissions[parentModule.id] = allSubModulesChecked;
+        }
       }
-
-      setUserPermissions(updatedPermissions);
-    }
+      
+      return newPermissions;
+    });
   };
 
   const saveUserPermissions = async () => {
@@ -1117,20 +1183,59 @@ export default function OrganizationDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <MapPin className="w-5 h-5" />
-                Organization Branches
+                Organization Branches ({branches.length})
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8">
-                <MapPin className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Branches Management</h3>
-                <p className="text-gray-600 mb-4">
-                  Manage branches for {organization.name}
-                </p>
-                <Button>
-                  Add New Branch
-                </Button>
-              </div>
+              {loadingBranches ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                </div>
+              ) : branches.length === 0 ? (
+                <div className="text-center py-8">
+                  <MapPin className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Branches Found</h3>
+                  <p className="text-gray-600 mb-4">
+                    No branches found for {organization.name}
+                  </p>
+                  <Button>
+                    Add New Branch
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {branches.map((branch) => (
+                    <div key={branch.id} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                          <MapPin className="w-5 h-5 text-green-600" />
+                        </div>
+                        <div>
+                          <div className="font-medium">{branch.name}</div>
+                          <div className="text-sm text-gray-600">
+                            {branch.code} • {branch.type}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {branch.address}, {branch.city}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {getStatusBadge(branch.status)}
+                        <div className="text-sm text-gray-600">
+                          {branch.total_users || 0} users
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="pt-4">
+                    <Button>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add New Branch
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1144,42 +1249,253 @@ export default function OrganizationDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="p-4 border rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <CreditCard className="w-5 h-5 text-blue-600" />
-                      <span className="font-medium">Current Plan</span>
+              {loadingSubscription ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                </div>
+              ) : subscriptionDetails ? (
+                <div className="space-y-6">
+                  {/* Current Subscription Overview */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="p-4 border rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <CreditCard className="w-5 h-5 text-blue-600" />
+                        <span className="font-medium">Current Plan</span>
+                      </div>
+                      <div className="text-2xl font-bold">{subscriptionDetails.plan_details?.display_name || organization.subscription_plan}</div>
+                      <div className="text-sm text-gray-600 capitalize">{subscriptionDetails.plan_details?.name || organization.subscription_plan}</div>
                     </div>
-                    <div className="text-2xl font-bold capitalize">{organization.subscription_plan}</div>
-                    <div className="text-sm text-gray-600">Active subscription</div>
+
+                    <div className="p-4 border rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Calendar className="w-5 h-5 text-green-600" />
+                        <span className="font-medium">Status</span>
+                      </div>
+                      <div className="mb-2">{getSubscriptionStatusBadge(subscriptionDetails.status, subscriptionDetails.end_date)}</div>
+                      <div className="text-sm text-gray-600">
+                        {subscriptionDetails.end_date && getDaysUntilExpiry(subscriptionDetails.end_date) > 0
+                          ? `${getDaysUntilExpiry(subscriptionDetails.end_date)} days left`
+                          : 'Expired'
+                        }
+                      </div>
+                    </div>
+
+                    <div className="p-4 border rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Calendar className="w-5 h-5 text-purple-600" />
+                        <span className="font-medium">Valid Until</span>
+                      </div>
+                      <div className="text-lg font-bold">
+                        {subscriptionDetails.end_date ? new Date(subscriptionDetails.end_date).toLocaleDateString() : 'N/A'}
+                      </div>
+                      <div className="text-sm text-gray-600">Expiry date</div>
+                    </div>
+
+                    <div className="p-4 border rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Users className="w-5 h-5 text-orange-600" />
+                        <span className="font-medium">Auto Renew</span>
+                      </div>
+                      <div className="text-lg font-bold">
+                        {subscriptionDetails.auto_renew ? (
+                          <Badge className="bg-green-100 text-green-800">Enabled</Badge>
+                        ) : (
+                          <Badge className="bg-red-100 text-red-800">Disabled</Badge>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-600">Renewal setting</div>
+                    </div>
                   </div>
 
-                  <div className="p-4 border rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Calendar className="w-5 h-5 text-green-600" />
-                      <span className="font-medium">Status</span>
+                  {/* Plan Details */}
+                  {subscriptionDetails.plan_details && (
+                    <div className="border rounded-lg p-6">
+                      <h3 className="text-lg font-semibold mb-4">Plan Features & Limits</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                          <h4 className="font-medium text-gray-900 mb-2">Usage Limits</h4>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span>Max Users:</span>
+                              <span className="font-medium">
+                                {subscriptionDetails.plan_details.max_users || 'Unlimited'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Max Organizations:</span>
+                              <span className="font-medium">
+                                {subscriptionDetails.plan_details.max_organizations || 'Unlimited'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Max Branches:</span>
+                              <span className="font-medium">
+                                {subscriptionDetails.plan_details.max_branches || 'Unlimited'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <h4 className="font-medium text-gray-900 mb-2">Current Usage</h4>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span>Active Users:</span>
+                              <span className="font-medium">{organization.total_users || 0}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Organizations:</span>
+                              <span className="font-medium">1</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Branches:</span>
+                              <span className="font-medium">{organization.total_branches || 0}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <h4 className="font-medium text-gray-900 mb-2">Pricing Tiers</h4>
+                          <div className="space-y-2 text-sm">
+                            {subscriptionDetails.plan_details.pricing_tiers && subscriptionDetails.plan_details.pricing_tiers.length > 0 ? (
+                              subscriptionDetails.plan_details.pricing_tiers.map((tier: any, index: number) => (
+                                <div key={index} className="flex justify-between">
+                                  <span className="capitalize">{tier.cycle}:</span>
+                                  <span className="font-medium">{formatCurrency(parseFloat(tier.price))}</span>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="flex justify-between">
+                                <span>Price:</span>
+                                <span className="font-medium">{formatCurrency(subscriptionDetails.plan_details.price)}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Features List */}
+                      {subscriptionDetails.plan_details.features && subscriptionDetails.plan_details.features.length > 0 && (
+                        <div className="mt-6">
+                          <h4 className="font-medium text-gray-900 mb-3">Included Features</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {subscriptionDetails.plan_details.features.map((feature: string, index: number) => (
+                              <div key={index} className="flex items-center gap-2 text-sm">
+                                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                <span>{feature}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-2xl font-bold capitalize">{organization.subscription_status}</div>
-                    <div className="text-sm text-gray-600">Subscription status</div>
+                  )}
+
+                  {/* Subscription History */}
+                  <div className="border rounded-lg p-6">
+                    <h3 className="text-lg font-semibold mb-4">Subscription Information</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-2">Subscription Details</h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span>Subscription ID:</span>
+                            <span className="font-mono">{subscriptionDetails.id}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Start Date:</span>
+                            <span>{new Date(subscriptionDetails.start_date).toLocaleDateString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Created:</span>
+                            <span>{new Date(subscriptionDetails.created_at).toLocaleDateString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Last Updated:</span>
+                            <span>{new Date(subscriptionDetails.updated_at).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-2">Organization Details</h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span>Organization:</span>
+                            <span>{subscriptionDetails.organization_name}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Owner:</span>
+                            <span>{organization.owner_name || 'Not assigned'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>License:</span>
+                            <span>{organization.license_number}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>License Expiry:</span>
+                            <span>{new Date(organization.license_expiry).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="p-4 border rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Users className="w-5 h-5 text-purple-600" />
-                      <span className="font-medium">Users</span>
-                    </div>
-                    <div className="text-2xl font-bold">{organization.total_users || 0}</div>
-                    <div className="text-sm text-gray-600">Active users</div>
+                  {/* Action Buttons */}
+                  <div className="flex justify-center gap-4">
+                    <Button variant="outline">
+                      View Billing History
+                    </Button>
+                    <Button>
+                      Manage Subscription
+                    </Button>
+                    <Button variant="outline">
+                      Upgrade Plan
+                    </Button>
                   </div>
                 </div>
+              ) : (
+                <div className="text-center py-8">
+                  <CreditCard className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Active Subscription</h3>
+                  <p className="text-gray-600 mb-4">
+                    This organization doesn't have an active subscription.
+                  </p>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="p-4 border rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <CreditCard className="w-5 h-5 text-blue-600" />
+                          <span className="font-medium">Plan</span>
+                        </div>
+                        <div className="text-lg font-bold capitalize">{organization.subscription_plan}</div>
+                        <div className="text-sm text-gray-600">From organization data</div>
+                      </div>
 
-                <div className="flex justify-center">
-                  <Button>
-                    Manage Subscription
-                  </Button>
+                      <div className="p-4 border rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Calendar className="w-5 h-5 text-red-600" />
+                          <span className="font-medium">Status</span>
+                        </div>
+                        <div className="text-lg font-bold capitalize">{organization.subscription_status}</div>
+                        <div className="text-sm text-gray-600">Subscription status</div>
+                      </div>
+
+                      <div className="p-4 border rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Users className="w-5 h-5 text-purple-600" />
+                          <span className="font-medium">Users</span>
+                        </div>
+                        <div className="text-lg font-bold">{organization.total_users || 0}</div>
+                        <div className="text-sm text-gray-600">Active users</div>
+                      </div>
+                    </div>
+                    <Button>
+                      Create Subscription
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

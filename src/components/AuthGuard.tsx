@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { authAPI } from '@/services/api';
+import { authAPI, subscriptionAPI } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
 import { LoadingOverlay } from '@/components/ui/loading';
 
@@ -27,8 +27,12 @@ export function AuthGuard({ children }: AuthGuardProps) {
         return;
       }
 
+      const user = JSON.parse(currentUser);
+      
+      // Skip subscription validation for now
+      // TODO: Fix subscription API and re-enable validation
+
       // If we have both token and user data, assume authenticated
-      // Skip backend validation for faster login experience
       setIsAuthenticated(true);
     } catch (error) {
       console.error('Auth validation error:', error);

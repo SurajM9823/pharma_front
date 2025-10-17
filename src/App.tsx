@@ -47,6 +47,7 @@ import NetworkReports from "./pages/network/NetworkReports";
 
 // Patient Module Pages
 import PatientDirectory from "./pages/patients/PatientDirectory";
+import PatientDetail from "./pages/patients/PatientDetail";
 import MedicalRecords from "./pages/patients/MedicalRecords";
 import PatientPrescriptions from "./pages/patients/PatientPrescriptions";
 import PurchaseHistory from "./pages/patients/PurchaseHistory";
@@ -165,6 +166,7 @@ const App = () => (
 
             {/* Patients Module Routes */}
             <Route path="patients/directory" element={<PatientDirectory />} />
+            <Route path="patients/detail/:id" element={<PatientDetail />} />
             <Route path="patients/records" element={<MedicalRecords />} />
             <Route path="patients/prescriptions" element={<PatientPrescriptions />} />
             <Route path="patients/history" element={<PurchaseHistory />} />

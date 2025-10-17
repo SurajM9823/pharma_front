@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Plus, Edit, Trash2, AlertTriangle, Package, TrendingUp, TrendingDown, Building2, RotateCcw, Clock, Calendar } from "lucide-react";
+import { Search, Plus, Edit, Trash2, AlertTriangle, Package, TrendingUp, TrendingDown, Building2, RotateCcw, Clock, Calendar, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // API Base Configuration
@@ -52,7 +52,11 @@ export default function StockManagement() {
     packSize: "",
     batchNumber: "",
     manufacturingDate: "",
-    expiryDate: ""
+    expiryDate: "",
+    rackId: "",
+    rackName: "",
+    sectionId: "",
+    sectionName: ""
   }]);
 
   const [supplierSuggestions, setSupplierSuggestions] = useState([]);
@@ -60,6 +64,16 @@ export default function StockManagement() {
   const [medicineSuggestions, setMedicineSuggestions] = useState({});
   const [showMedicineSuggestions, setShowMedicineSuggestions] = useState({});
   const [medicineSearchTerm, setMedicineSearchTerm] = useState({});
+
+  // Rack and section management
+  const [racks, setRacks] = useState([]);
+  const [selectedRack, setSelectedRack] = useState(null);
+  const [availableSections, setAvailableSections] = useState([]);
+  const [selectedSections, setSelectedSections] = useState({});
+  const [rackSectionsMap, setRackSectionsMap] = useState({});
+  const [isSectionModalOpen, setIsSectionModalOpen] = useState(false);
+  const [currentItemForSection, setCurrentItemForSection] = useState(null);
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
 
   // Payment tracking states
   const [paymentDetails, setPaymentDetails] = useState({
@@ -89,21 +103,21 @@ export default function StockManagement() {
   const fetchInventory = async () => {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const url = userBranchId 
+      const url = userBranchId
         ? `${API_BASE_URL}/inventory/inventory-items/?branch_id=${userBranchId}`
         : `${API_BASE_URL}/inventory/inventory-items/`;
-      
+
       const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
         },
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setInventory(data);
-        
+
         // Extract unique categories
         const uniqueCategories = [...new Set(data.map(item => item.medicine?.category?.name).filter(Boolean))];
         setCategories(uniqueCategories);
@@ -112,6 +126,77 @@ export default function StockManagement() {
       console.error('Error fetching inventory:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fetch racks for the user's branch
+  const fetchRacks = async () => {
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/inventory/racks/`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setRacks(data);
+      }
+    } catch (error) {
+      console.error('Error fetching racks:', error);
+    }
+  };
+
+  // Fetch sections for selected rack
+  const fetchRackSections = async (rackId) => {
+    console.log('=== FETCH RACK SECTIONS DEBUG ===');
+    console.log('Fetching sections for rackId:', rackId);
+
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      console.log('Token available:', !!token);
+
+      const response = await fetch(`${API_BASE_URL}/inventory/racks/${rackId}/sections/`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+      });
+
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Raw sections data:', data);
+
+        // Store sections in map for future use
+        setRackSectionsMap(prev => ({
+          ...prev,
+          [rackId]: data
+        }));
+
+        // Show all sections (both occupied and empty) for stock management
+        console.log('All sections:', data);
+        console.log('Setting availableSections to all sections:', data);
+
+        setAvailableSections(data);
+
+        // Force update the UI
+        setTimeout(() => {
+          console.log('Forcing UI update after setting sections');
+        }, 100);
+      } else {
+        console.error('Failed to fetch sections, response:', response);
+        const errorText = await response.text();
+        console.error('Error response text:', errorText);
+        setAvailableSections([]);
+      }
+    } catch (error) {
+      console.error('Error fetching rack sections:', error);
+      setAvailableSections([]);
     }
   };
 
@@ -137,6 +222,7 @@ export default function StockManagement() {
   useEffect(() => {
     fetchInventory();
     fetchPurchaseHistory();
+    fetchRacks();
   }, []);
 
   const getTotalAmount = () => {
@@ -243,7 +329,11 @@ export default function StockManagement() {
       packSize: "",
       batchNumber: "",
       manufacturingDate: "",
-      expiryDate: ""
+      expiryDate: "",
+      rackId: "",
+      rackName: "",
+      sectionId: "",
+      sectionName: ""
     }]);
   };
 
@@ -259,6 +349,105 @@ export default function StockManagement() {
     }
   };
 
+  // Handle rack selection
+  const handleRackChange = (itemId, rackId) => {
+    console.log('=== RACK CHANGE DEBUG ===');
+    console.log('itemId:', itemId);
+    console.log('rackId:', rackId);
+
+    const selectedRack = racks.find(rack => rack.id.toString() === rackId);
+    console.log('selectedRack:', selectedRack);
+
+    // Update the specific item with rack info
+    setItems(prevItems => prevItems.map(item =>
+      item.id === itemId ? {
+        ...item,
+        rackId: rackId,
+        rackName: selectedRack?.name || '',
+        sectionId: '', // Reset section when rack changes
+        sectionName: ''
+      } : item
+    ));
+
+    if (rackId) {
+      console.log('Rack selected, checking sections...');
+      // Check if we already have sections for this rack
+      if (rackSectionsMap[rackId]) {
+        console.log('Sections already cached for rack:', rackId);
+        // Show all sections (both occupied and empty) for stock management
+        console.log('All sections:', rackSectionsMap[rackId]);
+        setAvailableSections(rackSectionsMap[rackId]);
+      } else {
+        console.log('Fetching sections for rack:', rackId);
+        // Fetch sections for this rack
+        fetchRackSections(rackId);
+      }
+    } else {
+      console.log('No rack selected, clearing sections');
+      setAvailableSections([]);
+    }
+
+    // Force re-render by updating state
+    setSelectedRack(selectedRack);
+  };
+
+  // Force update available sections when rackSectionsMap changes
+  useEffect(() => {
+    if (selectedRack && rackSectionsMap[selectedRack.id]) {
+      const allSections = rackSectionsMap[selectedRack.id];
+      console.log('=== USE EFFECT UPDATE ===');
+      console.log('selectedRack:', selectedRack);
+      console.log('Setting availableSections from useEffect:', allSections);
+      setAvailableSections(allSections);
+    }
+  }, [rackSectionsMap, selectedRack]);
+
+  // Handle section selection
+  const handleSectionChange = (itemId, sectionId) => {
+    const selectedSection = availableSections.find(section => section.id.toString() === sectionId);
+    setItems(prevItems => prevItems.map(item =>
+      item.id === itemId ? {
+        ...item,
+        sectionId: sectionId,
+        sectionName: selectedSection?.section_name || ''
+      } : item
+    ));
+  };
+
+  // Open section selection modal
+  const openSectionModal = (item) => {
+    setCurrentItemForSection(item);
+    setIsSectionModalOpen(true);
+  };
+
+  // Handle section selection from modal
+  const handleSectionSelect = (section) => {
+    if (currentItemForSection) {
+      // Check if this is for location management modal
+      if (selectedItem && selectedItem.batches) {
+        const updatedBatches = selectedItem.batches.map((batch: any) =>
+          batch.id === currentItemForSection.id ? {
+            ...batch,
+            newSectionId: section.id.toString(),
+            newSectionName: section.section_name
+          } : batch
+        );
+        setSelectedItem({...selectedItem, batches: updatedBatches});
+      } else {
+        // For stock management form
+        setItems(prevItems => prevItems.map(item =>
+          item.id === currentItemForSection.id ? {
+            ...item,
+            sectionId: section.id.toString(),
+            sectionName: section.section_name
+          } : item
+        ));
+      }
+    }
+    setIsSectionModalOpen(false);
+    setCurrentItemForSection(null);
+  };
+
   // Calculate today for expiry filtering
   const today = new Date();
 
@@ -267,7 +456,7 @@ export default function StockManagement() {
   inventory.forEach(item => {
     const medicineId = item.medicine?.id;
     if (!medicineId) return;
-    
+
     if (!medicineGroups[medicineId]) {
       medicineGroups[medicineId] = {
         id: medicineId,
@@ -277,16 +466,15 @@ export default function StockManagement() {
         max_stock: item.max_stock || 1000,
         cost_price: item.cost_price,
         selling_price: item.selling_price,
-        location: item.location,
         supplier_name: item.supplier_name,
         batches: [],
         earliest_expiry: null
       };
     }
-    
+
     medicineGroups[medicineId].total_stock += item.current_stock || 0;
     medicineGroups[medicineId].batches.push(item);
-    
+
     // Track earliest expiry date
     if (item.expiry_date) {
       const expiryDate = new Date(item.expiry_date);
@@ -462,7 +650,11 @@ export default function StockManagement() {
         packSize: "",
         batchNumber: "",
         manufacturingDate: "",
-        expiryDate: ""
+        expiryDate: "",
+        rackId: "",
+        rackName: "",
+        sectionId: "",
+        sectionName: ""
       }]);
       setIsAddDialogOpen(false);
       
@@ -579,7 +771,7 @@ export default function StockManagement() {
               <div className="flex-1 overflow-y-auto border rounded p-2 mb-2">
                 <div className="space-y-2">
                   {items.map((item, index) => (
-                    <div key={item.id} className="grid grid-cols-10 gap-2 items-start p-3 border rounded bg-white">
+                    <div key={item.id} className="grid grid-cols-12 gap-2 items-start p-3 border rounded bg-white">
                       <div className="col-span-2 relative">
                         {index === 0 && <div className="text-xs text-gray-500 mb-1">Medicine Name *</div>}
                         <input
@@ -756,6 +948,36 @@ export default function StockManagement() {
                           }}
                         />
                       </div>
+
+                      <div className="col-span-1">
+                        {index === 0 && <div className="text-xs text-gray-500 mb-1">Rack</div>}
+                        <Select value={item.rackId || ""} onValueChange={(value) => handleRackChange(item.id, value)}>
+                          <SelectTrigger className="text-xs h-7">
+                            <SelectValue placeholder="Select rack" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {racks.map(rack => (
+                              <SelectItem key={rack.id} value={rack.id.toString()}>
+                                {rack.name} ({rack.rows}×{rack.columns})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="col-span-1">
+                        {index === 0 && <div className="text-xs text-gray-500 mb-1">Section</div>}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openSectionModal(item)}
+                          disabled={!item.rackId}
+                          className="text-xs h-7 w-full"
+                        >
+                          {item.sectionName || "Select Section"}
+                        </Button>
+                      </div>
                       
                       <div className="col-span-1 flex justify-center">
                         {index === 0 && <div className="text-xs text-gray-500 mb-1">Del</div>}
@@ -769,6 +991,19 @@ export default function StockManagement() {
                         >
                           <Trash2 size={10} />
                         </Button>
+                      </div>
+
+                      <div className="col-span-1">
+                        {index === 0 && <div className="text-xs text-gray-500 mb-1">Stored Location</div>}
+                        <div className="text-xs text-center">
+                          {item.rackName && item.sectionName ? (
+                            <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-green-800">
+                              ✅ {item.rackName}-{item.sectionName}
+                            </Badge>
+                          ) : (
+                            <span className="text-red-400 text-xs">⚠️ Not assigned</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -908,7 +1143,11 @@ export default function StockManagement() {
                     selling_price: item.sellingPrice || null,
                     batch_number: item.batchNumber,
                     manufacturing_date: item.manufacturingDate,
-                    expiry_date: item.expiryDate
+                    expiry_date: item.expiryDate,
+                    rackId: item.rackId,
+                    sectionId: item.sectionId,
+                    rackName: item.rackName,
+                    sectionName: item.sectionName
                   })),
                   payment: paymentDetails
                 };
@@ -1141,7 +1380,7 @@ export default function StockManagement() {
                   <TableHead>Current Stock</TableHead>
                   <TableHead>Stock Status</TableHead>
                   <TableHead>Unit Price</TableHead>
-                  <TableHead>Location</TableHead>
+                  <TableHead>Stored Location</TableHead>
                   <TableHead>Supplier</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -1197,13 +1436,24 @@ export default function StockManagement() {
                         </TableCell>
                         <TableCell>NPR {item.cost_price || 0}</TableCell>
                         <TableCell>
-                          <Badge variant="outline">{item.location || 'N/A'}</Badge>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedItem(item);
+                              setIsLocationModalOpen(true);
+                            }}
+                            className="h-8 w-8 p-0"
+                            title="View/Manage Locations"
+                          >
+                            <MapPin size={16} className={item.batches?.some((b: any) => b.location) ? "text-green-600" : "text-gray-400"} />
+                          </Button>
                         </TableCell>
                         <TableCell>{item.supplier_name || 'N/A'}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               variant="outline"
                               onClick={() => handleRestock(firstBatch)}
                               title="Restock this item"
@@ -1211,8 +1461,8 @@ export default function StockManagement() {
                               <RotateCcw size={12} className="mr-1" />
                               Restock
                             </Button>
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               variant="outline"
                               onClick={() => {
                                 setSelectedItem(item);
@@ -1221,6 +1471,19 @@ export default function StockManagement() {
                             >
                               <Edit size={12} className="mr-1" />
                               Manage Batches
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedItem(item);
+                                setIsLocationModalOpen(true);
+                              }}
+                              className="h-6 px-2 text-xs"
+                              title="View Locations"
+                            >
+                              <MapPin size={12} className="mr-1" />
+                              Locations
                             </Button>
                           </div>
                         </TableCell>
@@ -1590,7 +1853,11 @@ export default function StockManagement() {
                     selling_price: items[0].sellingPrice,
                     batch_number: items[0].batchNumber,
                     manufacturing_date: items[0].manufacturingDate,
-                    expiry_date: items[0].expiryDate
+                    expiry_date: items[0].expiryDate,
+                    rackId: items[0].rackId,
+                    sectionId: items[0].sectionId,
+                    rackName: items[0].rackName,
+                    sectionName: items[0].sectionName
                   },
                   payment: paymentDetails,
                   previous_item_id: restockItem.id
@@ -1622,7 +1889,7 @@ export default function StockManagement() {
                   fetchPurchaseHistory();
                   // Reset forms
                   setGlobalSupplier({ name: '', contact: '' });
-                  setItems([{ id: 1, medicineId: '', medicineName: '', quantity: '', costPrice: '', sellingPrice: '', unit: 'pieces', batchNumber: '', manufacturingDate: '', expiryDate: '' }]);
+                  setItems([{ id: 1, medicineId: '', medicineName: '', quantity: '', costPrice: '', sellingPrice: '', unit: 'pieces', packSize: '', batchNumber: '', manufacturingDate: '', expiryDate: '', rackId: '', rackName: '', sectionId: '', sectionName: '' }]);
                   setPaymentDetails({ totalAmount: 0, paidAmount: 0, creditAmount: 0, paymentMethod: 'cash', paymentDate: new Date().toISOString().split('T')[0], notes: '' });
                 } else {
                   console.log('ERROR: Restock failed');
@@ -1634,6 +1901,270 @@ export default function StockManagement() {
               }
             }}>
               Complete Restock
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Section Selection Modal */}
+      <Dialog open={isSectionModalOpen} onOpenChange={setIsSectionModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="sr-only">Select Rack Section</DialogTitle>
+            <DialogDescription>
+              Choose a section from the rack layout. Green sections contain medicine, white sections are empty.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedRack && availableSections.length > 0 && (
+            <div className="space-y-4">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h3 className="font-medium text-blue-900 mb-2">Rack: {selectedRack.name}</h3>
+                <div className="grid grid-cols-4 gap-2 text-sm">
+                  <div><span className="text-gray-600">Rows:</span> <span className="font-medium">{selectedRack.rows}</span></div>
+                  <div><span className="text-gray-600">Columns:</span> <span className="font-medium">{selectedRack.columns}</span></div>
+                  <div><span className="text-gray-600">Total Sections:</span> <span className="font-medium">{availableSections.length}</span></div>
+                  <div><span className="text-gray-600">Occupied:</span> <span className="font-medium">{availableSections.filter(s => s.is_occupied).length}</span></div>
+                </div>
+              </div>
+
+              {/* Rack Layout Grid */}
+              <div className="bg-gray-50 p-6 rounded-lg">
+                <div
+                  className="grid gap-2 mx-auto"
+                  style={{
+                    gridTemplateColumns: `repeat(${selectedRack.columns}, minmax(0, 1fr))`,
+                    maxWidth: `${Math.min(selectedRack.columns * 60, 600)}px`
+                  }}
+                >
+                  {Array.from({ length: selectedRack.rows }, (_, rowIndex) =>
+                    Array.from({ length: selectedRack.columns }, (_, colIndex) => {
+                      const sectionName = `${String.fromCharCode(65 + rowIndex)}${colIndex + 1}`;
+                      const section = availableSections.find(s =>
+                        s.row_number === rowIndex + 1 && s.column_number === colIndex + 1
+                      );
+
+                      const isOccupied = section?.is_occupied || false;
+                      const isSelected = currentItemForSection?.sectionId === section?.id?.toString();
+
+                      return (
+                        <button
+                          key={`${rowIndex}-${colIndex}`}
+                          className={`aspect-square rounded-lg border-2 flex flex-col items-center justify-center text-sm font-medium cursor-pointer transition-all hover:scale-105 relative ${
+                            isSelected
+                              ? 'bg-blue-500 border-blue-600 text-white'
+                              : isOccupied
+                                ? 'bg-green-500 border-green-600 text-white hover:bg-green-600'
+                                : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-100'
+                          }`}
+                          onClick={() => section && handleSectionSelect(section)}
+                          title={section ? `${sectionName}: ${isOccupied ? 'Occupied' : 'Empty'}` : sectionName}
+                        >
+                          <span>{sectionName}</span>
+                          {isOccupied && (
+                            <span className="text-xs font-bold">{section.quantity || 0}</span>
+                          )}
+                        </button>
+                      );
+                    })
+                  ).flat()}
+                </div>
+              </div>
+
+              {/* Legend */}
+              <div className="flex justify-center gap-6 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-blue-500 border-2 border-blue-600 rounded"></div>
+                  <span>Selected</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-green-100 border-2 border-green-300 rounded"></div>
+                  <span>Has Medicine (Occupied)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-gray-100 border-2 border-gray-300 rounded"></div>
+                  <span>Empty</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsSectionModalOpen(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Location Management Modal */}
+      <Dialog open={isLocationModalOpen} onOpenChange={setIsLocationModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center">
+              <MapPin className="mr-2" size={20} />
+              Manage Locations - {selectedItem?.medicine?.name}
+            </DialogTitle>
+            <DialogDescription>
+              View and update storage locations for different batches of this medicine
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedItem && (
+            <div className="space-y-4">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h4 className="text-sm font-medium mb-2">Medicine Summary</h4>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div><span className="text-gray-600">Total Stock:</span> <span className="font-medium">{selectedItem.total_stock}</span></div>
+                  <div><span className="text-gray-600">Batches:</span> <span className="font-medium">{selectedItem.batches?.length || 0}</span></div>
+                  <div><span className="text-gray-600">Category:</span> <span className="font-medium">{selectedItem.medicine?.category?.name || 'N/A'}</span></div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium">Batch Locations</h4>
+                {selectedItem.batches?.map((batch: any, index: number) => (
+                  <div key={batch.id} className="border rounded p-3 bg-white">
+                    <div className="grid grid-cols-5 gap-3 items-center">
+                      <div>
+                        <Label className="text-xs">Batch #{index + 1}</Label>
+                        <div className="text-xs font-medium">{batch.batch_number}</div>
+                        <div className="text-xs text-gray-500">Stock: {batch.current_stock}</div>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Current Location</Label>
+                        <div className="text-xs font-medium">
+                          {batch.location ? (
+                            <Badge variant="outline" className="bg-green-50 border-green-200 text-green-800">
+                              📍 {batch.location}
+                            </Badge>
+                          ) : (
+                            <span className="text-gray-400">Not assigned</span>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="text-xs">New Rack</Label>
+                        <Select
+                          value={batch.newRackId || ""}
+                          onValueChange={(value) => {
+                            const updatedBatches = selectedItem.batches.map((b: any) =>
+                              b.id === batch.id ? {...b, newRackId: value, newRackName: racks.find(r => r.id.toString() === value)?.name} : b
+                            );
+                            setSelectedItem({...selectedItem, batches: updatedBatches});
+                          }}
+                        >
+                          <SelectTrigger className="text-xs h-8">
+                            <SelectValue placeholder="Select rack" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {racks.map(rack => (
+                              <SelectItem key={rack.id} value={rack.id.toString()}>
+                                {rack.name} ({rack.rows}×{rack.columns})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs">New Section</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setCurrentItemForSection(batch);
+                            setSelectedRack(racks.find(r => r.id.toString() === batch.newRackId));
+                            if (batch.newRackId) {
+                              fetchRackSections(batch.newRackId);
+                            }
+                            setIsSectionModalOpen(true);
+                          }}
+                          disabled={!batch.newRackId}
+                          className="text-xs h-8 w-full"
+                        >
+                          {batch.newSectionName || "Select Section"}
+                        </Button>
+                      </div>
+                      <div>
+                        <Button
+                          size="sm"
+                          onClick={async () => {
+                            if (!batch.newRackName || !batch.newSectionName) {
+                              toast({
+                                title: "Error",
+                                description: "Please select both rack and section",
+                                variant: "destructive"
+                              });
+                              return;
+                            }
+
+                            try {
+                              const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+                              const response = await fetch(`${API_BASE_URL}/inventory/inventory-items/${batch.id}/`, {
+                                method: 'PATCH',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  ...(token && { 'Authorization': `Bearer ${token}` }),
+                                },
+                                body: JSON.stringify({
+                                  location: `${batch.newRackName}-${batch.newSectionName}`,
+                                  branch_id: userBranchId,
+                                }),
+                              });
+
+                              if (response.ok) {
+                                // Update local state
+                                const updatedBatches = selectedItem.batches.map((b: any) =>
+                                  b.id === batch.id ? {
+                                    ...b,
+                                    location: `${batch.newRackName}-${batch.newSectionName}`,
+                                    newRackId: undefined,
+                                    newRackName: undefined,
+                                    newSectionName: undefined
+                                  } : b
+                                );
+                                setSelectedItem({...selectedItem, batches: updatedBatches});
+
+                                toast({
+                                  title: "Success",
+                                  description: `Location updated for batch ${batch.batch_number}`,
+                                });
+
+                                // Refresh inventory
+                                fetchInventory();
+                              } else {
+                                toast({
+                                  title: "Error",
+                                  description: "Failed to update location",
+                                  variant: "destructive"
+                                });
+                              }
+                            } catch (error) {
+                              console.error('Error updating location:', error);
+                              toast({
+                                title: "Error",
+                                description: "Failed to update location",
+                                variant: "destructive"
+                              });
+                            }
+                          }}
+                          disabled={!batch.newRackName || !batch.newSectionName}
+                          className="text-xs h-8"
+                        >
+                          Update
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsLocationModalOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

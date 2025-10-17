@@ -109,6 +109,19 @@ const SubscriptionManagement: React.FC = () => {
     );
   };
 
+  const getAvailablePlanTypes = () => {
+    const allPlanTypes = [
+      { value: 'trial', label: 'Trial' },
+      { value: 'basic', label: 'Basic' },
+      { value: 'professional', label: 'Professional' },
+      { value: 'enterprise', label: 'Enterprise' }
+    ];
+
+    // Filter out plan types that already exist
+    const existingPlanTypes = plans.map(plan => plan.name);
+    return allPlanTypes.filter(planType => !existingPlanTypes.includes(planType.value));
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">

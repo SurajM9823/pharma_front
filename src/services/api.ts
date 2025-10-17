@@ -760,6 +760,191 @@ export const inventoryAPI = {
       message: 'Manufacturer created successfully'
     };
   },
+
+  // Rack Management
+  getRacks: async (): Promise<ApiResponse<any[]>> => {
+    const response = await api.get('/inventory/racks/');
+    return {
+      success: true,
+      data: response.data,
+      message: 'Racks retrieved successfully'
+    };
+  },
+
+  createRack: async (rackData: any): Promise<ApiResponse<any>> => {
+    const response = await api.post('/inventory/racks/', rackData);
+    return {
+      success: true,
+      data: response.data,
+      message: 'Rack created successfully'
+    };
+  },
+
+  getRack: async (id: number): Promise<ApiResponse<any>> => {
+    const response = await api.get(`/inventory/racks/${id}/`);
+    return {
+      success: true,
+      data: response.data,
+      message: 'Rack retrieved successfully'
+    };
+  },
+
+  updateRack: async (id: number, rackData: any): Promise<ApiResponse<any>> => {
+    const response = await api.put(`/inventory/racks/${id}/`, rackData);
+    return {
+      success: true,
+      data: response.data,
+      message: 'Rack updated successfully'
+    };
+  },
+
+  deleteRack: async (id: number): Promise<ApiResponse> => {
+    const response = await api.delete(`/inventory/racks/${id}/`);
+    return {
+      success: true,
+      message: 'Rack deleted successfully'
+    };
+  },
+
+  getRackSections: async (rackId: number): Promise<ApiResponse<any[]>> => {
+    const response = await api.get(`/inventory/racks/${rackId}/sections/`);
+    return {
+      success: true,
+      data: response.data,
+      message: 'Rack sections retrieved successfully'
+    };
+  },
+
+  assignMedicineToSection: async (sectionId: number, assignmentData: any): Promise<ApiResponse<any>> => {
+    const response = await api.post(`/inventory/rack-sections/${sectionId}/assign-medicine/`, assignmentData);
+    return {
+      success: true,
+      data: response.data,
+      message: 'Medicine assigned to section successfully'
+    };
+  },
+
+  removeMedicineFromSection: async (sectionId: number, reason: string): Promise<ApiResponse<any>> => {
+    const response = await api.post(`/inventory/rack-sections/${sectionId}/remove-medicine/`, { reason });
+    return {
+      success: true,
+      data: response.data,
+      message: 'Medicine removed from section successfully'
+    };
+  },
+
+  // Medicine search for rack assignment
+  searchMedicinesForRack: async (query: string): Promise<ApiResponse<any[]>> => {
+    const response = await api.get('/inventory/medicines/search/', { params: { q: query } });
+    return {
+      success: true,
+      data: response.data,
+      message: 'Medicines retrieved successfully'
+    };
+  },
+
+  // Supplier Dashboard APIs
+  getSupplierDashboardStats: async (): Promise<ApiResponse<any>> => {
+    const response = await api.get('/inventory/supplier/dashboard/stats/');
+    return {
+      success: true,
+      data: response.data,
+      message: 'Supplier dashboard stats retrieved successfully'
+    };
+  },
+
+  getSupplierRecentOrders: async (): Promise<ApiResponse<any[]>> => {
+    const response = await api.get('/inventory/supplier/dashboard/recent-orders/');
+    return {
+      success: true,
+      data: response.data,
+      message: 'Recent orders retrieved successfully'
+    };
+  },
+
+  getSupplierOrdersOverTime: async (): Promise<ApiResponse<any[]>> => {
+    const response = await api.get('/inventory/supplier/dashboard/orders-over-time/');
+    return {
+      success: true,
+      data: response.data,
+      message: 'Orders over time data retrieved successfully'
+    };
+  },
+
+  getSupplierCustomersChart: async (): Promise<ApiResponse<any[]>> => {
+    const response = await api.get('/inventory/supplier/dashboard/customers-chart/');
+    return {
+      success: true,
+      data: response.data,
+      message: 'Customer chart data retrieved successfully'
+    };
+  },
+
+  getSupplierTopProducts: async (): Promise<ApiResponse<any[]>> => {
+    const response = await api.get('/inventory/supplier/dashboard/top-products/');
+    return {
+      success: true,
+      data: response.data,
+      message: 'Top products retrieved successfully'
+    };
+  },
+
+  // Manager Dashboard APIs
+  getManagerDashboardStats: async (dateFilter?: string): Promise<ApiResponse<any>> => {
+    const response = await api.get('/pos/manager/dashboard/stats/', {
+      params: { date_filter: dateFilter || 'month' }
+    });
+    return {
+      success: true,
+      data: response.data,
+      message: 'Manager dashboard stats retrieved successfully'
+    };
+  },
+
+  getManagerSalesOverTime: async (): Promise<ApiResponse<any[]>> => {
+    const response = await api.get('/pos/manager/dashboard/sales-over-time/');
+    return {
+      success: true,
+      data: response.data,
+      message: 'Sales over time data retrieved successfully'
+    };
+  },
+
+  getManagerPaymentMethodsChart: async (): Promise<ApiResponse<any[]>> => {
+    const response = await api.get('/pos/manager/dashboard/payment-methods/');
+    return {
+      success: true,
+      data: response.data,
+      message: 'Payment methods chart data retrieved successfully'
+    };
+  },
+
+  getManagerTopProducts: async (): Promise<ApiResponse<any[]>> => {
+    const response = await api.get('/pos/manager/dashboard/top-products/');
+    return {
+      success: true,
+      data: response.data,
+      message: 'Top products retrieved successfully'
+    };
+  },
+
+  getManagerRecentActivities: async (): Promise<ApiResponse<any[]>> => {
+    const response = await api.get('/pos/manager/dashboard/recent-activities/');
+    return {
+      success: true,
+      data: response.data,
+      message: 'Recent activities retrieved successfully'
+    };
+  },
+
+  getManagerStaffPerformance: async (): Promise<ApiResponse<any[]>> => {
+    const response = await api.get('/pos/manager/dashboard/staff-performance/');
+    return {
+      success: true,
+      data: response.data,
+      message: 'Staff performance data retrieved successfully'
+    };
+  },
 };
 
 // Patient Types

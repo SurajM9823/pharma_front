@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Save, Edit, Eye, Phone, Mail, Calendar, MapPin, User } from "lucide-react";
+import { Search, Save, Edit, Eye, Phone, Mail, Calendar, MapPin, User, Printer } from "lucide-react";
 
 // Add print styles
 const printStyles = `
@@ -30,16 +30,36 @@ import { useToast } from "@/hooks/use-toast";
 
 interface Patient {
   id: string;
-  name: string;
-  age: number;
-  gender: string;
-  phone: string;
-  email: string;
-  address: string;
-  patientType: string;
-  lastVisit: string;
-  totalVisits: number;
-  status: 'active' | 'inactive';
+  patient_id?: string;
+  first_name?: string;
+  last_name?: string;
+  full_name?: string;
+  name?: string;
+  age?: number;
+  gender?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  patient_type?: string;
+  patientType?: string;
+  lastVisit?: string;
+  totalVisits?: number;
+  status?: 'active' | 'inactive';
+  created_at?: string;
+  blood_group?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  allergies?: string;
+  chronic_conditions?: string;
+  // Billing information
+  last_visit_date?: string;
+  total_visits?: number;
+  total_billing?: number;
+  total_credit?: number;
+  has_credit?: boolean;
+  latest_bill_id?: string;
+  latest_bill_amount?: number;
 }
 
 const mockPatients: Patient[] = [
@@ -90,6 +110,13 @@ export default function PatientDirectory() {
   const [searchResults, setSearchResults] = useState<Patient[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [tableSearchTerm, setTableSearchTerm] = useState("");
+  const [searchType, setSearchType] = useState("all");
+  const [creditFilter, setCreditFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("name");
+  const [sortOrder, setSortOrder] = useState("asc");
+  const [visitDateFrom, setVisitDateFrom] = useState("");
+  const [visitDateTo, setVisitDateTo] = useState("");
+
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [viewPatient, setViewPatient] = useState(null);
@@ -140,23 +167,19 @@ export default function PatientDirectory() {
   // Handle table search with debounce
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (tableSearchTerm) {
-        loadPatients(1, tableSearchTerm);
-      } else {
-        loadPatients(1);
-      }
+      loadPatients(1);
     }, 500);
-    
+
     return () => clearTimeout(timeoutId);
   }, [tableSearchTerm]);
 
-  const loadPatients = async (page = 1, search = '') => {
+  const loadPatients = async (page = 1) => {
     try {
       setLoading(true);
       const params = new URLSearchParams({
         page: page.toString(),
         page_size: pageSize.toString(),
-        ...(search && { search })
+        ...(tableSearchTerm && { search: tableSearchTerm })
       });
       
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/backend'}/patients/?${params}`, {
@@ -230,7 +253,7 @@ export default function PatientDirectory() {
           // Fallback to API search if no local results
           const response = await patientsAPI.searchPatients(value);
           if (response.success) {
-            setSearchResults(response.data || []);
+            setSearchResults((response.data || []) as Patient[]);
             setShowSearchResults(true);
           }
         }
@@ -298,12 +321,12 @@ export default function PatientDirectory() {
       
       // Add patient_id for new patients, keep existing for updates
       if (!isEditing) {
-        patientData.patient_id = nextPatientNumber.branch;
+        (patientData as any).patient_id = nextPatientNumber.branch;
       } else {
         // Find the current patient to get their existing patient_id
         const currentPatient = patients.find(p => p.id === formData.id);
         if (currentPatient?.patient_id) {
-          patientData.patient_id = currentPatient.patient_id;
+          (patientData as any).patient_id = currentPatient.patient_id;
         }
       }
 
@@ -632,16 +655,108 @@ export default function PatientDirectory() {
       {/* Patient List */}
       <Card className="flex-1">
         <CardHeader className="pb-3">
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center mb-4">
             <CardTitle className="text-base">All Patients</CardTitle>
-            <div className="relative w-64">
+          </div>
+          
+          {/* Enhanced Search and Filter Controls */}
+          <div className="grid grid-cols-7 gap-2 mb-4">
+            <div className="relative col-span-2">
               <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={14} />
               <Input
-                placeholder="Search patients..."
+                placeholder="Search patients, bills, dates..."
                 value={tableSearchTerm}
                 onChange={(e) => setTableSearchTerm(e.target.value)}
                 className="pl-7 h-8 text-sm"
               />
+            </div>
+            
+            <Select value={searchType} onValueChange={setSearchType}>
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Fields</SelectItem>
+                <SelectItem value="name">Name Only</SelectItem>
+                <SelectItem value="phone">Phone Only</SelectItem>
+                <SelectItem value="bill_id">Bill ID</SelectItem>
+                <SelectItem value="date">Visit Date</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Select value={creditFilter} onValueChange={setCreditFilter}>
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue placeholder="Credit Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Patients</SelectItem>
+                <SelectItem value="true">Has Credit</SelectItem>
+                <SelectItem value="false">No Credit</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name">Sort by Name</SelectItem>
+                <SelectItem value="patient_id">Sort by ID</SelectItem>
+                <SelectItem value="phone">Sort by Phone</SelectItem>
+                <SelectItem value="visit_date">Sort by Visit Date</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Select value={sortOrder} onValueChange={setSortOrder}>
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc">Ascending</SelectItem>
+                <SelectItem value="desc">Descending</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="h-8 text-xs"
+              onClick={() => {
+                setTableSearchTerm("");
+                setSearchType("all");
+                setSortBy("name");
+                setSortOrder("asc");
+                setVisitDateFrom("");
+                setVisitDateTo("");
+                setCreditFilter("all");
+              }}
+            >
+              Clear Filters
+            </Button>
+          </div>
+          
+          {/* Date Range Filter */}
+          <div className="grid grid-cols-4 gap-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Visit Date From</Label>
+              <Input
+                type="date"
+                value={visitDateFrom}
+                onChange={(e) => setVisitDateFrom(e.target.value)}
+                className="h-8 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Visit Date To</Label>
+              <Input
+                type="date"
+                value={visitDateTo}
+                onChange={(e) => setVisitDateTo(e.target.value)}
+                className="h-8 text-sm"
+              />
+            </div>
+            <div className="col-span-2">
+              {/* Empty space */}
             </div>
           </div>
         </CardHeader>
@@ -669,52 +784,38 @@ export default function PatientDirectory() {
                 <tbody>
                   {filteredPatients.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="text-center py-8 text-gray-500">
+                      <td colSpan={8} className="text-center py-8 text-gray-500">
                         No patients found
                       </td>
                     </tr>
                   ) : (
                     filteredPatients.map((patient) => (
-                      <tr key={patient.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => { setViewPatient(patient); setShowViewDialog(true); }}>
-                        <td className="p-2 font-medium text-blue-600">{patient.patient_id}</td>
-                        <td className="p-2">{patient.full_name ? patient.full_name : `${patient.first_name || ''} ${patient.last_name || ''}`}</td>
-                        <td className="p-2">{patient.age}Y / {patient.gender}</td>
+                      <tr key={patient.id || Math.random()} className="border-b hover:bg-gray-50">
+                        <td className="p-2 font-medium text-blue-600">{patient.patient_id || '-'}</td>
+                        <td className="p-2">{patient.full_name || `${patient.first_name || ''} ${patient.last_name || ''}`.trim() || '-'}</td>
+                        <td className="p-2">{patient.age || '-'}Y / {patient.gender || '-'}</td>
                         <td className="p-2">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1 text-xs">
-                              <Phone size={10} />
-                              {patient.phone}
-                            </div>
-                            {patient.email && (
-                              <div className="flex items-center gap-1 text-xs text-gray-500">
-                                <Mail size={10} />
-                                {patient.email}
-                              </div>
-                            )}
-                          </div>
+                          <div className="text-xs">{patient.phone || '-'}</div>
+                          {patient.email && <div className="text-xs text-gray-500">{patient.email}</div>}
                         </td>
                         <td className="p-2">
-                          <Badge variant={patient.patient_type === "inpatient" ? "default" : "secondary"} className="text-xs">
-                            {patient.patient_type}
+                          <Badge variant={(patient.patient_type || patient.patientType) === "inpatient" ? "default" : "secondary"} className="text-xs">
+                            {patient.patient_type || patient.patientType || 'outpatient'}
                           </Badge>
                         </td>
                         <td className="p-2 text-xs">{patient.created_at ? new Date(patient.created_at).toLocaleDateString() : '-'}</td>
                         <td className="p-2 text-center">-</td>
                         <td className="p-2">
                           <Badge variant={patient.status === "active" ? "default" : "secondary"} className="text-xs">
-                            {patient.status}
+                            {patient.status || 'active'}
                           </Badge>
                         </td>
                         <td className="p-2">
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
+                          <Button
+                            size="sm"
+                            variant="outline"
                             className="h-6 w-6 p-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setViewPatient(patient);
-                              setShowViewDialog(true);
-                            }}
+                            onClick={() => window.location.href = `/patients/detail/${patient.id}`}
                           >
                             <Eye size={12} />
                           </Button>
@@ -734,7 +835,7 @@ export default function PatientDirectory() {
                   <Button 
                     size="sm" 
                     variant="outline" 
-                    onClick={() => loadPatients(currentPage - 1, tableSearchTerm)}
+                    onClick={() => loadPatients(currentPage - 1)}
                     disabled={currentPage <= 1 || loading}
                   >
                     Previous
@@ -745,7 +846,7 @@ export default function PatientDirectory() {
                   <Button 
                     size="sm" 
                     variant="outline" 
-                    onClick={() => loadPatients(currentPage + 1, tableSearchTerm)}
+                    onClick={() => loadPatients(currentPage + 1)}
                     disabled={currentPage >= totalPages || loading}
                   >
                     Next

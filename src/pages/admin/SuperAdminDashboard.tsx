@@ -7,12 +7,13 @@ import {
   Package, Shield, RefreshCw, Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { organizationsAPI } from "@/services/api";
+import { organizationsAPI, subscriptionAPI, usersAPI } from "@/services/api";
 
 export default function SuperAdminDashboard() {
   const { toast } = useToast();
   const [organizations, setOrganizations] = useState<any[]>([]);
   const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [subscriptionStats, setSubscriptionStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
 
@@ -20,25 +21,40 @@ export default function SuperAdminDashboard() {
   useEffect(() => {
     fetchOrganizations();
     fetchDashboardStats();
+    fetchSubscriptionStats();
   }, []);
 
   const fetchDashboardStats = async () => {
     try {
-      setStatsLoading(true);
       const response = await organizationsAPI.getDashboardStats();
       if (response.success && response.data) {
         setDashboardStats(response.data);
       }
     } catch (error) {
       console.error('Failed to fetch dashboard stats:', error);
-      // Set default values if API fails
+    }
+  };
+
+  const fetchSubscriptionStats = async () => {
+    try {
+      setStatsLoading(true);
+      const subscriptionsResponse = await subscriptionAPI.getStats();
+      
+      if (subscriptionsResponse.success && subscriptionsResponse.data) {
+        setSubscriptionStats(subscriptionsResponse.data);
+        setDashboardStats(subscriptionsResponse.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch subscription stats:', error);
+      // Set fallback values
       setDashboardStats({
         total_organizations: organizations.length,
         active_organizations: organizations.filter(org => org.status === 'active').length,
         total_users: 0,
         active_users: 0,
         monthly_revenue: 0,
-        active_subscriptions: organizations.filter(org => org.subscription_plan !== 'trial').length,
+        active_subscriptions: 0,
+        growth_rate: 0,
         subscription_distribution: {
           trial: 0,
           basic: 0,
@@ -106,6 +122,7 @@ export default function SuperAdminDashboard() {
             onClick={() => {
               fetchOrganizations();
               fetchDashboardStats();
+              fetchSubscriptionStats();
             }}
             variant="outline"
             className="gap-2"
@@ -132,7 +149,6 @@ export default function SuperAdminDashboard() {
             </div>
             <p className="text-xs text-muted-foreground">
               +{statsLoading ? '...' : (dashboardStats?.monthly_growth || 0)} this month
-              {dashboardStats?.growth_percentage ? ` (${dashboardStats.growth_percentage > 0 ? '+' : ''}${dashboardStats.growth_percentage}%)` : ''}
             </p>
           </CardContent>
         </Card>
@@ -166,7 +182,7 @@ export default function SuperAdminDashboard() {
               {statsLoading ? '...' : `₹${(dashboardStats?.monthly_revenue || 0).toLocaleString('en-IN')}`}
             </div>
             <p className="text-xs text-muted-foreground">
-              {statsLoading ? '...' : `${dashboardStats?.growth_percentage || 0 > 0 ? '+' : ''}${dashboardStats?.growth_percentage || 0}% growth`}
+              {statsLoading ? '...' : `${dashboardStats?.growth_rate > 0 ? '+' : ''}${dashboardStats?.growth_rate || 0}% growth`}
             </p>
           </CardContent>
         </Card>

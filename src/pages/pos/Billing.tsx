@@ -5,9 +5,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Search, Plus, Minus, Trash2, X, Eye, Filter, Printer } from "lucide-react";
+import { Search, Plus, Minus, Trash2, X, Eye, Filter, Printer, Split } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ReceiptModal from "@/components/ReceiptModal";
 
 // API Base URL
@@ -44,6 +44,11 @@ export default function POSBilling() {
   const [receiptData, setReceiptData] = useState(null);
   const [editingBillId, setEditingBillId] = useState(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showSplitPaymentModal, setShowSplitPaymentModal] = useState(false);
+  const [splitPayments, setSplitPayments] = useState([
+    { method: 'cash', amount: '', transaction_id: '' },
+    { method: 'online', amount: '', transaction_id: '' }
+  ]);
   const [posSettings, setPosSettings] = useState({
     business_name: '',
     business_address: '',
@@ -311,10 +316,10 @@ export default function POSBilling() {
       removeFromCart(cartKey);
       return;
     }
-    
+
     const cartItem = cartItems.find(item => item.cart_key === cartKey);
     if (!cartItem) return;
-    
+
     // Find the product to check total stock
     const product = inventory.find(p => p.medicine_id === cartItem.medicine_id);
     if (!product) {
@@ -325,14 +330,14 @@ export default function POSBilling() {
       });
       return;
     }
-    
+
     // Check if new quantity exceeds available stock
     const otherCartQty = cartItems
       .filter(item => item.medicine_id === cartItem.medicine_id && item.cart_key !== cartKey)
       .reduce((sum, item) => sum + item.quantity, 0);
-    
+
     const totalRequested = otherCartQty + newQuantity;
-    
+
     if (totalRequested > product.total_stock) {
       toast({
         title: "Insufficient Stock",
@@ -341,15 +346,67 @@ export default function POSBilling() {
       });
       return;
     }
-    
+
     const quantityDiff = newQuantity - cartItem.quantity;
+
     if (quantityDiff > 0) {
+      // Increasing quantity - allocate more stock
       await addToCart(cartItem, quantityDiff);
-    } else {
-      setCartItems(prevItems => prevItems.map(item =>
-        item.cart_key === cartKey ? { ...item, quantity: newQuantity } : item
-      ));
+    } else if (quantityDiff < 0) {
+      // Decreasing quantity - deallocate stock
+      const quantityToReduce = Math.abs(quantityDiff);
+
+      try {
+        const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+        const response = await fetch(`${API_BASE_URL}/inventory/deallocate-stock/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { 'Authorization': `Bearer ${token}` }),
+          },
+          body: JSON.stringify({
+            medicine_id: cartItem.medicine_id,
+            quantity: quantityToReduce,
+            branch_id: userBranchId,
+            cart_key: cartKey
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          toast({
+            title: "Stock Error",
+            description: errorData.error || "Failed to deallocate stock",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Update cart item quantity and batch info
+        const deallocation = await response.json();
+        setCartItems(prevItems => prevItems.map(item => {
+          if (item.cart_key === cartKey) {
+            return {
+              ...item,
+              quantity: newQuantity,
+              batch_info: deallocation.remaining_batches || item.batch_info
+            };
+          }
+          return item;
+        }));
+
+        fetchInventory(); // Refresh inventory to show updated stock
+
+      } catch (error) {
+        console.error('Error deallocating stock:', error);
+        toast({
+          title: "Error",
+          description: "Failed to update quantity",
+          variant: "destructive",
+        });
+      }
     }
+    // If quantityDiff === 0, do nothing
   };
 
   const removeFromCart = (cartKey) => {
@@ -554,9 +611,13 @@ export default function POSBilling() {
   };
 
   const handleCheckout = async () => {
-
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+
+      // Check if split payment is used
+      const isSplitPayment = splitPayments.some(p => p.amount && parseFloat(p.amount) > 0);
+      const totalSplitAmount = splitPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+
       const saleData = {
         patient_id: patientId,
         patient_name: patientName || "Walk-in Customer",
@@ -575,14 +636,15 @@ export default function POSBilling() {
         total,
         discount_amount: calculatedDiscountAmount,
         tax_amount: taxAmount,
-        payment_method: paymentMethod,
-        paid_amount: parseFloat(paidAmount) || 0,
-        credit_amount: creditAmount,
+        payment_method: isSplitPayment ? 'split' : paymentMethod,
+        paid_amount: isSplitPayment ? totalSplitAmount : (parseFloat(paidAmount) || 0),
+        credit_amount: isSplitPayment ? Math.max(0, total - totalSplitAmount) : creditAmount,
         transaction_id: paymentMethod === 'online' ? `TXN_${Date.now()}` : '',
+        split_payments: isSplitPayment ? splitPayments.filter(p => p.amount && parseFloat(p.amount) > 0) : null,
         sale_id: editingBillId // Include sale_id if completing pending bill
       };
 
-      const endpoint = editingBillId 
+      const endpoint = editingBillId
         ? `${API_BASE_URL}/pos/sales/complete/`
         : `${API_BASE_URL}/pos/sales/create/`;
 
@@ -601,10 +663,10 @@ export default function POSBilling() {
       }
 
       const result = await response.json();
-      
-      const saleType = creditAmount > 0 ? 'Credit Sale' : 'Cash Sale';
-      const message = creditAmount > 0 
-        ? `Credit sale completed. Due: NPR ${creditAmount.toFixed(2)}` 
+
+      const saleType = (isSplitPayment ? totalSplitAmount < total : creditAmount > 0) ? 'Credit Sale' : 'Cash Sale';
+      const message = (isSplitPayment ? totalSplitAmount < total : creditAmount > 0)
+        ? `Credit sale completed. Due: NPR ${(isSplitPayment ? total - totalSplitAmount : creditAmount).toFixed(2)}`
         : `Sale completed for NPR ${total.toFixed(2)}`;
 
       toast({
@@ -635,12 +697,16 @@ export default function POSBilling() {
       setDiscountType("percent");
       setTransactionType("cash");
       setEditingBillId(null);
-      
+      setSplitPayments([
+        { method: 'cash', amount: '', transaction_id: '' },
+        { method: 'online', amount: '', transaction_id: '' }
+      ]);
+
       // Refresh data
       fetchInventory();
       fetchCompletedBills();
       fetchPendingBills();
-      
+
     } catch (error) {
       console.error('Error creating sale:', error);
       toast({
@@ -945,7 +1011,15 @@ export default function POSBilling() {
                             return;
                           }
                           const newQty = parseInt(value) || 1;
-                          updateQuantity(item.cart_key, newQty);
+                          // Only update if quantity actually changed
+                          if (newQty !== item.quantity) {
+                            updateQuantity(item.cart_key, newQty);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            (e.target as HTMLInputElement).blur(); // Trigger onBlur
+                          }
                         }}
                         className="w-12 h-5 text-xs text-center"
                         min="1"
@@ -1068,14 +1142,25 @@ export default function POSBilling() {
 
             {/* 3. Payment & Return/Due Section */}
             <div className="space-y-1">
-              <div className="text-sm font-semibold text-gray-700 mb-1">💵 Payment</div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-sm font-semibold text-gray-700">💵 Payment</div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSplitPaymentModal(true)}
+                  className="h-6 px-2 text-xs"
+                >
+                  <Split className="w-3 h-3 mr-1" />
+                  Split
+                </Button>
+              </div>
               <div className="grid grid-cols-2 gap-1">
                 <div>
                   <Input
                     type="number"
                     value={paidAmount || ""}
                     onChange={(e) => {
-                      const value = e.target.value === "" ? "" : parseFloat(e.target.value) || 0;
+                      const value = e.target.value === "" ? "" : e.target.value;
                       setPaidAmount(value);
                     }}
                     placeholder={`NPR ${total.toFixed(2)}`}
@@ -1083,12 +1168,12 @@ export default function POSBilling() {
                   />
                 </div>
                 <div>
-                  {paidAmount !== "" && paidAmount > 0 ? (
+                  {paidAmount !== "" && parseFloat(paidAmount) > 0 ? (
                     <div className={`p-1 rounded text-sm ${parseFloat(paidAmount) > total ? 'bg-green-100 text-green-800' : parseFloat(paidAmount) < total ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'}`}>
                       <div className="flex justify-between">
                         <span>{parseFloat(paidAmount) > total ? 'Return:' : parseFloat(paidAmount) < total ? 'Due:' : 'Exact:'}</span>
                         <span className="font-bold">
-                          {parseFloat(paidAmount) === total ? 'NPR 0.00' : `NPR ${Math.abs(total - parseFloat(paidAmount)).toFixed(2)}`}
+                          {parseFloat(paidAmount) === total ? 'NPR 0.00' : `NPR ${Math.abs(total - parseFloat(paidAmount || '0')).toFixed(2)}`}
                         </span>
                       </div>
                     </div>
@@ -1156,7 +1241,7 @@ export default function POSBilling() {
                   <th className="p-2 text-left">Patient</th>
                   <th className="p-2 text-left">Phone</th>
                   <th className="p-2 text-left">Total</th>
-                  <th className="p-2 text-left">Credit</th>
+                  <th className="p-2 text-left">Payment Method</th>
                   <th className="p-2 text-left">Status</th>
                   <th className="p-2 text-left">Date</th>
                   <th className="p-2 text-left">Actions</th>
@@ -1170,10 +1255,29 @@ export default function POSBilling() {
                     <td className="p-2">{bill.patientPhone}</td>
                     <td className="p-2">NPR {bill.total.toFixed(2)}</td>
                     <td className="p-2">
-                      {bill.creditAmount > 0 ? (
-                        <Badge variant="destructive">NPR {bill.creditAmount.toFixed(2)}</Badge>
+                      {bill.isSplitPayment ? (
+                        <div className="space-y-1">
+                          {bill.paymentBreakdown.map((payment, idx) => (
+                            <div key={idx}>
+                              <Badge variant="outline" className="text-xs">
+                                {payment}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
                       ) : (
-                        <Badge variant="default">Paid</Badge>
+                        <div className="space-y-1">
+                          <Badge variant="default" className="text-xs">
+                            {bill.paymentMethod.charAt(0).toUpperCase() + bill.paymentMethod.slice(1)}: NPR {bill.paidAmount.toFixed(2)}
+                          </Badge>
+                          {bill.creditAmount > 0 && (
+                            <div>
+                              <Badge variant="destructive" className="text-xs">
+                                Credit: NPR {bill.creditAmount.toFixed(2)}
+                              </Badge>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="p-2">
@@ -1282,6 +1386,19 @@ export default function POSBilling() {
                   <p><strong>Total:</strong> NPR {selectedBill.total.toFixed(2)}</p>
                   <p><strong>Paid:</strong> NPR {selectedBill.paidAmount.toFixed(2)}</p>
                   <p><strong>Credit:</strong> NPR {selectedBill.creditAmount.toFixed(2)}</p>
+                  
+                  {selectedBill.isSplitPayment && (
+                    <div className="mt-3">
+                      <h4 className="font-medium mb-1">Payment Breakdown:</h4>
+                      <div className="space-y-1">
+                        {selectedBill.paymentBreakdown.map((payment, idx) => (
+                          <Badge key={idx} variant="outline" className="mr-2">
+                            {payment}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               <div>
@@ -1309,6 +1426,38 @@ export default function POSBilling() {
                   </tbody>
                 </table>
               </div>
+              
+              {selectedBill.payments && selectedBill.payments.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-2">Payment Details</h3>
+                  <table className="w-full text-sm border">
+                    <thead>
+                      <tr className="bg-gray-100">
+                        <th className="p-2 text-left">Method</th>
+                        <th className="p-2 text-left">Amount</th>
+                        <th className="p-2 text-left">Reference</th>
+                        <th className="p-2 text-left">Date</th>
+                        <th className="p-2 text-left">Received By</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedBill.payments.map((payment, index) => (
+                        <tr key={payment.id || `payment-${index}`} className="border-b">
+                          <td className="p-2">
+                            <Badge variant="outline">
+                              {payment.method.charAt(0).toUpperCase() + payment.method.slice(1)}
+                            </Badge>
+                          </td>
+                          <td className="p-2">NPR {payment.amount.toFixed(2)}</td>
+                          <td className="p-2">{payment.reference || '-'}</td>
+                          <td className="p-2">{payment.date}</td>
+                          <td className="p-2">{payment.receivedBy}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
@@ -1378,12 +1527,25 @@ export default function POSBilling() {
                 </div>
                 <div className="flex justify-between text-sm mt-2">
                   <span>Payment Method:</span>
-                  <Badge variant="outline">{paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1)}</Badge>
+                  <Badge variant="outline">
+                    {splitPayments.some(p => p.amount && parseFloat(p.amount) > 0) ? 'Split Payment' : paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1)}
+                  </Badge>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Paid Amount:</span>
                   <span>NPR {(parseFloat(paidAmount) || 0).toFixed(2)}</span>
                 </div>
+                {splitPayments.some(p => p.amount && parseFloat(p.amount) > 0) && (
+                  <div className="mt-2">
+                    <div className="text-xs text-gray-600 mb-1">Split Details:</div>
+                    {splitPayments.filter(p => p.amount && parseFloat(p.amount) > 0).map((payment, index) => (
+                      <div key={index} className="flex justify-between text-xs text-gray-600">
+                        <span>{payment.method.charAt(0).toUpperCase() + payment.method.slice(1)}:</span>
+                        <span>NPR {parseFloat(payment.amount).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {creditAmount > 0 && (
                   <div className="flex justify-between text-sm text-orange-600">
                     <span>Credit Amount:</span>
@@ -1412,8 +1574,165 @@ export default function POSBilling() {
         </DialogContent>
       </Dialog>
 
+      {/* Split Payment Modal */}
+      <Dialog open={showSplitPaymentModal} onOpenChange={setShowSplitPaymentModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center">
+              <Split className="mr-2" size={18} />
+              Split Payment
+            </DialogTitle>
+            <DialogDescription>
+              Split the total amount across multiple payment methods
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-blue-50 p-3 rounded-lg">
+              <div className="flex justify-between items-center">
+                <span className="font-medium">Total Amount:</span>
+                <span className="font-bold text-lg">NPR {total.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {splitPayments.map((payment, index) => (
+                <div key={index} className="border rounded p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Select
+                      value={payment.method}
+                      onValueChange={(value) => {
+                        const newPayments = [...splitPayments];
+                        newPayments[index].method = value;
+                        setSplitPayments(newPayments);
+                      }}
+                    >
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="online">Online</SelectItem>
+                        <SelectItem value="card">Card</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    {splitPayments.length > 2 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const newPayments = splitPayments.filter((_, i) => i !== index);
+                          setSplitPayments(newPayments);
+                        }}
+                        className="h-6 w-6 p-0 text-red-500"
+                      >
+                        <X size={12} />
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs">Amount</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={payment.amount}
+                        onChange={(e) => {
+                          const newPayments = [...splitPayments];
+                          newPayments[index].amount = e.target.value;
+                          setSplitPayments(newPayments);
+                        }}
+                        placeholder="0.00"
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    {payment.method !== 'cash' && (
+                      <div>
+                        <Label className="text-xs">Transaction ID</Label>
+                        <Input
+                          value={payment.transaction_id}
+                          onChange={(e) => {
+                            const newPayments = [...splitPayments];
+                            newPayments[index].transaction_id = e.target.value;
+                            setSplitPayments(newPayments);
+                          }}
+                          placeholder="TXN123"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {splitPayments.length < 4 && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSplitPayments([...splitPayments, { method: 'cash', amount: '', transaction_id: '' }]);
+                  }}
+                  className="w-full"
+                >
+                  <Plus size={14} className="mr-2" />
+                  Add Payment Method
+                </Button>
+              )}
+            </div>
+
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <div className="space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span>Total Split Amount:</span>
+                  <span className="font-medium">
+                    NPR {splitPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Remaining:</span>
+                  <span className={`font-medium ${total - splitPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    NPR {Math.max(0, total - splitPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowSplitPaymentModal(false);
+                  setSplitPayments([
+                    { method: 'cash', amount: '', transaction_id: '' },
+                    { method: 'online', amount: '', transaction_id: '' }
+                  ]);
+                }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  const totalSplit = splitPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+                  if (totalSplit > 0) {
+                    setPaidAmount(totalSplit.toString());
+                    setPaymentMethod('split');
+                  }
+                  setShowSplitPaymentModal(false);
+                }}
+                className="flex-1"
+                disabled={splitPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) === 0}
+              >
+                Apply Split
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Receipt Modal */}
-      <ReceiptModal 
+      <ReceiptModal
         isOpen={showReceiptModal}
         onClose={() => setShowReceiptModal(false)}
         receiptData={receiptData}

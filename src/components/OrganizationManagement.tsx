@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Plus, Building2, Users, MapPin, Edit, Trash2, Eye, CheckCircle, XCircle } from 'lucide-react';
-import { organizationsAPI, usersAPI, Organization, Branch, User } from '@/services/api';
+import { organizationsAPI, usersAPI, subscriptionAPI, Organization, Branch, User } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
 
 interface OrganizationFormData {
@@ -45,6 +45,10 @@ export function OrganizationManagement() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [activeSubscriptions, setActiveSubscriptions] = useState<any[]>([]);
+  const [subscriptionPlans, setSubscriptionPlans] = useState<any[]>([]);
+  const [selectedPlan, setSelectedPlan] = useState<any>(null);
+  const [selectedPricingTier, setSelectedPricingTier] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('organizations');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -83,6 +87,8 @@ export function OrganizationManagement() {
     loadOrganizations();
     loadBranches();
     loadUsers();
+    loadActiveSubscriptions();
+    loadSubscriptionPlans();
   }, []);
 
   const loadOrganizations = async () => {
@@ -147,6 +153,48 @@ export function OrganizationManagement() {
     }
   };
 
+  const loadActiveSubscriptions = async () => {
+    try {
+      const response = await subscriptionAPI.getSubscriptions({ status: 'active' });
+      console.log('DEBUG: Active Subscriptions API Response:', response);
+
+      if (response.success && response.data) {
+        const subscriptions = response.data.results || response.data;
+        setActiveSubscriptions(Array.isArray(subscriptions) ? subscriptions : []);
+      } else if (response.results) {
+        setActiveSubscriptions(Array.isArray(response.results) ? response.results : []);
+      } else if (Array.isArray(response)) {
+        setActiveSubscriptions(response);
+      } else {
+        console.warn('Unexpected subscriptions API response format:', response);
+        setActiveSubscriptions([]);
+      }
+    } catch (error) {
+      console.error('Failed to load active subscriptions:', error);
+      // Don't block the UI if subscription loading fails
+      setActiveSubscriptions([]);
+    }
+  };
+
+  const loadSubscriptionPlans = async () => {
+    try {
+      const response = await subscriptionAPI.getPlans();
+      console.log('DEBUG: Subscription Plans API Response:', response);
+
+      if (response.success && response.data) {
+        setSubscriptionPlans(Array.isArray(response.data) ? response.data : []);
+      } else if (Array.isArray(response)) {
+        setSubscriptionPlans(response);
+      } else {
+        console.warn('Unexpected plans API response format:', response);
+        setSubscriptionPlans([]);
+      }
+    } catch (error) {
+      console.error('Failed to load subscription plans:', error);
+      setSubscriptionPlans([]);
+    }
+  };
+
   const handleCreateOrganization = async () => {
     try {
       setLoading(true);
@@ -154,10 +202,10 @@ export function OrganizationManagement() {
 
       // Validate required fields
       if (!orgForm.name || !orgForm.email || !orgForm.address || !orgForm.license_number || !orgForm.license_expiry ||
-          !orgForm.city || !orgForm.state || !orgForm.postal_code || !orgForm.phone || !orgForm.subscription_plan) {
+          !orgForm.city || !orgForm.state || !orgForm.postal_code || !orgForm.phone || !selectedPlan || !selectedPricingTier) {
         toast({
           title: 'Validation Error',
-          description: 'Please fill in all required organization fields marked with *',
+          description: 'Please fill in all required fields including subscription plan and pricing tier',
           variant: 'destructive',
         });
         return;
@@ -181,9 +229,9 @@ export function OrganizationManagement() {
         tax_rate: parseFloat(orgForm.tax_rate) || 13.00,
         timezone: orgForm.timezone,
         language: orgForm.language,
-        subscription_plan: orgForm.subscription_plan,
-        subscription_status: orgForm.subscription_status,
-        subscription_expiry: orgForm.subscription_expiry || null,
+        subscription_plan: selectedPlan.name,
+        subscription_status: 'active',
+        subscription_expiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days from now
       };
 
       // Only include optional fields if they have values
@@ -239,14 +287,29 @@ export function OrganizationManagement() {
       }
 
       if (response.success) {
+        // Create subscription record
+        try {
+          const subscriptionData = {
+            organization: response.data.id,
+            plan: selectedPlan.id,
+            start_date: new Date().toISOString(),
+            end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
+            auto_renew: true
+          };
+          await subscriptionAPI.createSubscription(subscriptionData);
+        } catch (subError) {
+          console.error('Failed to create subscription:', subError);
+        }
+
         toast({
           title: 'Success',
-          description: 'Organization created successfully',
+          description: 'Organization created successfully with subscription',
         });
         setShowCreateDialog(false);
         resetForms();
         loadOrganizations();
         loadUsers();
+        loadActiveSubscriptions();
       } else {
         toast({
           title: 'Error',
@@ -292,7 +355,31 @@ export function OrganizationManagement() {
       subscription_expiry: '',
       logo: undefined,
     });
+    setSelectedPlan(null);
+    setSelectedPricingTier(null);
     setFormErrors({});
+  };
+
+  const getAvailableSubscriptionPlans = () => {
+    return subscriptionPlans.filter(plan => plan.is_active);
+  };
+
+  const handlePlanSelection = (plan: any) => {
+    setSelectedPlan(plan);
+    setSelectedPricingTier(null); // Reset pricing tier when plan changes
+  };
+
+  const getPricingTiers = () => {
+    if (!selectedPlan || !selectedPlan.pricing_tiers) return [];
+    return selectedPlan.pricing_tiers;
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'NPR',
+      minimumFractionDigits: 0,
+    }).format(amount);
   };
 
   const getStatusBadge = (status: string) => {
@@ -455,21 +542,74 @@ export function OrganizationManagement() {
                   {formErrors.phone && <span className="text-red-500 text-sm">{formErrors.phone[0]}</span>}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="org-subscription-plan">Subscription Plan *</Label>
-                  <Select value={orgForm.subscription_plan} onValueChange={(value) => setOrgForm({ ...orgForm, subscription_plan: value })}>
-                    <SelectTrigger className="border">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="trial">Trial (Free)</SelectItem>
-                      <SelectItem value="basic">Basic</SelectItem>
-                      <SelectItem value="professional">Professional</SelectItem>
-                      <SelectItem value="enterprise">Enterprise</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {formErrors.subscription_plan && <span className="text-red-500 text-sm">{formErrors.subscription_plan[0]}</span>}
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Subscription Plan *</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {getAvailableSubscriptionPlans().map((plan) => (
+                      <Card 
+                        key={plan.id} 
+                        className={`cursor-pointer transition-all ${
+                          selectedPlan?.id === plan.id 
+                            ? 'ring-2 ring-blue-500 bg-blue-50' 
+                            : 'hover:shadow-md'
+                        }`}
+                        onClick={() => handlePlanSelection(plan)}
+                      >
+                        <CardContent className="p-4">
+                          <div className="text-center">
+                            <h3 className="font-semibold text-lg">{plan.display_name}</h3>
+                            <Badge className="mt-1">{plan.name}</Badge>
+                            <div className="mt-2">
+                              {plan.pricing_tiers && plan.pricing_tiers.length > 0 ? (
+                                <div className="text-sm text-gray-600">
+                                  From {formatCurrency(Math.min(...plan.pricing_tiers.map((t: any) => parseFloat(t.price))))}
+                                </div>
+                              ) : (
+                                <div className="text-lg font-bold">{formatCurrency(plan.price)}</div>
+                              )}
+                            </div>
+                            <div className="mt-2 text-xs text-gray-500">
+                              {plan.max_users ? `Up to ${plan.max_users} users` : 'Unlimited users'}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                  {!selectedPlan && <span className="text-red-500 text-sm">Please select a subscription plan</span>}
                 </div>
+
+                {selectedPlan && getPricingTiers().length > 0 && (
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Billing Cycle *</Label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {getPricingTiers().map((tier: any, index: number) => (
+                        <Card 
+                          key={index} 
+                          className={`cursor-pointer transition-all ${
+                            selectedPricingTier?.cycle === tier.cycle 
+                              ? 'ring-2 ring-green-500 bg-green-50' 
+                              : 'hover:shadow-md'
+                          }`}
+                          onClick={() => setSelectedPricingTier(tier)}
+                        >
+                          <CardContent className="p-4">
+                            <div className="text-center">
+                              <h4 className="font-medium capitalize">{tier.cycle}</h4>
+                              <div className="text-lg font-bold text-green-600">
+                                {formatCurrency(parseFloat(tier.price))}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                per {tier.cycle}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                    {!selectedPricingTier && <span className="text-red-500 text-sm">Please select a billing cycle</span>}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -486,13 +626,41 @@ export function OrganizationManagement() {
                 {formErrors.address && <span className="text-red-500 text-sm">{formErrors.address[0]}</span>}
               </div>
 
+              {selectedPlan && selectedPricingTier && (
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h4 className="font-semibold text-blue-900">Selected Subscription</h4>
+                  <div className="mt-2 text-sm text-blue-800">
+                    <p><strong>Plan:</strong> {selectedPlan.display_name}</p>
+                    <p><strong>Billing:</strong> {formatCurrency(parseFloat(selectedPricingTier.price))} per {selectedPricingTier.cycle}</p>
+                    <p><strong>Users:</strong> {selectedPlan.max_users ? `Up to ${selectedPlan.max_users}` : 'Unlimited'}</p>
+                    <p><strong>Organizations:</strong> {selectedPlan.max_organizations ? `Up to ${selectedPlan.max_organizations}` : 'Unlimited'}</p>
+                    {selectedPlan.features && selectedPlan.features.length > 0 && (
+                      <div className="mt-2">
+                        <strong>Features:</strong>
+                        <ul className="list-disc list-inside ml-2">
+                          {selectedPlan.features.map((feature: string, index: number) => (
+                            <li key={index}>{feature}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+              <Button variant="outline" onClick={() => {
+                setShowCreateDialog(false);
+                resetForms();
+              }}>
                 Cancel
               </Button>
-              <Button onClick={handleCreateOrganization} disabled={loading}>
+              <Button 
+                onClick={handleCreateOrganization} 
+                disabled={loading || !selectedPlan || !selectedPricingTier}
+              >
                 {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Create Organization
               </Button>

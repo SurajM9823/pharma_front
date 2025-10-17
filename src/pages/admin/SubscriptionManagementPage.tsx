@@ -157,6 +157,24 @@ export default function SubscriptionManagementPage() {
     }
   };
 
+  const getAvailablePlanTypes = () => {
+    const allPlanTypes = [
+      { value: 'trial', label: 'Trial' },
+      { value: 'basic', label: 'Basic' },
+      { value: 'professional', label: 'Professional' },
+      { value: 'enterprise', label: 'Enterprise' }
+    ];
+
+    // If editing an existing plan, allow the current plan type
+    if (editingPlan) {
+      return allPlanTypes;
+    }
+
+    // Filter out plan types that already exist
+    const existingPlanTypes = plans.map(plan => plan.name);
+    return allPlanTypes.filter(planType => !existingPlanTypes.includes(planType.value));
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -220,7 +238,7 @@ export default function SubscriptionManagementPage() {
           </Button>
           <Dialog open={showCreatePlan} onOpenChange={setShowCreatePlan}>
             <DialogTrigger asChild>
-              <Button>
+              <Button disabled={!editingPlan && getAvailablePlanTypes().length === 0}>
                 <Plus className="h-4 w-4 mr-2" />
                 Create Plan
               </Button>
@@ -238,12 +256,24 @@ export default function SubscriptionManagementPage() {
                         <SelectValue placeholder="Select plan type" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="trial">Trial</SelectItem>
-                        <SelectItem value="basic">Basic</SelectItem>
-                        <SelectItem value="professional">Professional</SelectItem>
-                        <SelectItem value="enterprise">Enterprise</SelectItem>
+                        {getAvailablePlanTypes().length > 0 ? (
+                          getAvailablePlanTypes().map((planType) => (
+                            <SelectItem key={planType.value} value={planType.value}>
+                              {planType.label}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="p-2 text-sm text-gray-500">
+                            All plan types already exist
+                          </div>
+                        )}
                       </SelectContent>
                     </Select>
+                    {!editingPlan && getAvailablePlanTypes().length === 0 && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        All plan types (Trial, Basic, Professional, Enterprise) already exist. You can edit existing plans instead.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label>Display Name</Label>
@@ -335,7 +365,12 @@ export default function SubscriptionManagementPage() {
                     setEditingPlan(null);
                     setPlanData({ name: '', display_name: '', pricing_tiers: [{ cycle: 'monthly', price: '' }], max_users: '', max_organizations: '', max_branches: '', features: [''] });
                   }}>Cancel</Button>
-                  <Button onClick={handleCreatePlan}>{editingPlan ? 'Update' : 'Create'} Plan</Button>
+                  <Button 
+                    onClick={handleCreatePlan}
+                    disabled={!editingPlan && !planData.name && getAvailablePlanTypes().length === 0}
+                  >
+                    {editingPlan ? 'Update' : 'Create'} Plan
+                  </Button>
                 </div>
               </div>
             </DialogContent>

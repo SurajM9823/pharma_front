@@ -535,7 +535,7 @@ export default function OrganizationDetailPage() {
           newPermissions[subModule.id] = false;
         });
       } else {
-        // If this is a sub-module, check if all sub-modules are checked to auto-check parent
+        // If this is a sub-module, check parent module logic
         const parentModule = userModules.find(module => 
           module.sub_modules.some(sub => sub.id === permissionId)
         );
@@ -545,8 +545,20 @@ export default function OrganizationDetailPage() {
             sub.id === permissionId ? checked : newPermissions[sub.id]
           );
           
-          // Auto-check/uncheck parent module based on sub-modules state
-          newPermissions[parentModule.id] = allSubModulesChecked;
+          // Only auto-check parent if ALL sub-modules are checked
+          // Only auto-uncheck parent if NO sub-modules are checked
+          const anySubModuleChecked = parentModule.sub_modules.some(sub => 
+            sub.id === permissionId ? checked : newPermissions[sub.id]
+          );
+          
+          if (allSubModulesChecked) {
+            // All sub-modules are checked, so check the parent
+            newPermissions[parentModule.id] = true;
+          } else if (!anySubModuleChecked) {
+            // No sub-modules are checked, so uncheck the parent
+            newPermissions[parentModule.id] = false;
+          }
+          // If some (but not all) sub-modules are checked, leave parent as is
         }
       }
       

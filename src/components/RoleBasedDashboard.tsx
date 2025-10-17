@@ -40,11 +40,24 @@ export function RoleBasedDashboard({ user }: RoleBasedDashboardProps) {
 
   // Check user permissions for modules
   const hasPermission = (module: string) => {
-    if (user.role === 'owner' || user.role === 'super_admin') return true;
-    if (!user?.modulePermissions) return false;
+    // Super admin and pharmacy owner have access to all modules
+    if (user.role === 'pharmacy_owner' || user.role === 'super_admin') return true;
+    
+    // Check if user has modulePermissions array
+    if (!user?.modulePermissions || !Array.isArray(user.modulePermissions)) {
+      // If no permissions data, allow access for now (fallback)
+      console.warn('No module permissions found for user, allowing access to:', module);
+      return true;
+    }
 
-    const moduleData = user.modulePermissions.find(m => m.id === module);
-    return moduleData?.has_access || false;
+    // Find the module permission
+    const moduleData = user.modulePermissions.find(m => m.id === module || m.name?.toLowerCase() === module.toLowerCase());
+    if (!moduleData) {
+      console.warn('Module permission not found for:', module);
+      return false;
+    }
+    
+    return moduleData.has_access || false;
   };
 
   const handleQuickAction = (path: string) => {

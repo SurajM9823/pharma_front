@@ -82,7 +82,6 @@ import StaffDashboard from "./pages/staff/StaffDashboard";
 // Additional Imports for Missing Components
 import InventorySettings from "./pages/inventory/Settings";
 import ExpenseCategories from "./pages/expenses/Categories";
-import ExpenseApproval from "./pages/expenses/Approval";
 import ExpenseReports from "./pages/expenses/Reports";
 import ExpenseSettings from "./pages/expenses/Settings";
 import SupplierOrders from "./pages/suppliers/Orders";
@@ -134,7 +133,6 @@ const App = () => (
             {/* Expenses Module Routes */}
             <Route path="expenses/tracking" element={<ExpenseTracking />} />
             <Route path="expenses/categories" element={<ExpenseCategories />} />
-            <Route path="expenses/approval" element={<ExpenseApproval />} />
             <Route path="expenses/reports" element={<ExpenseReports />} />
             <Route path="expenses/settings" element={<ExpenseSettings />} />
 

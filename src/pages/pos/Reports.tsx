@@ -24,8 +24,12 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/back
 const COLORS = ['hsl(var(--primary))', 'hsl(var(--secondary))', 'hsl(var(--accent))', 'hsl(var(--muted))'];
 
 export default function POSReports() {
-  const [dateRange, setDateRange] = useState("today");
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dateRange, setDateRange] = useState("30days");
+  const [startDate, setStartDate] = useState(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 29);
+    return date.toISOString().split('T')[0];
+  });
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
   const [salesSummary, setSalesSummary] = useState(null);
@@ -54,6 +58,10 @@ export default function POSReports() {
         break;
       case '30days':
         start = new Date(today.getTime() - 29 * 24 * 60 * 60 * 1000);
+        end = today;
+        break;
+      case 'all':
+        start = new Date('2024-01-01');
         end = today;
         break;
       case 'custom':
@@ -205,6 +213,7 @@ export default function POSReports() {
               <SelectItem value="today">Today</SelectItem>
               <SelectItem value="7days">Last 7 Days</SelectItem>
               <SelectItem value="30days">Last 30 Days</SelectItem>
+              <SelectItem value="all">All Time</SelectItem>
               <SelectItem value="custom">Custom Range</SelectItem>
             </SelectContent>
           </Select>

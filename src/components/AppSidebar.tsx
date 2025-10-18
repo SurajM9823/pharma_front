@@ -283,9 +283,8 @@ export function AppSidebar() {
       icon: Calculator,
       permissionKey: "expenses",
       items: [
-        { title: "Tracking", url: "/expenses/tracking", icon: TrendingUp, permissionKey: "exp_tracking" },
+        { title: "Management", url: "/expenses/tracking", icon: TrendingUp, permissionKey: "exp_tracking" },
         { title: "Categories", url: "/expenses/categories", icon: Archive, permissionKey: "exp_categories" },
-        { title: "Approval", url: "/expenses/approval", icon: FileCheck, permissionKey: "exp_approval" },
         { title: "Reports", url: "/expenses/reports", icon: BarChart3, permissionKey: "exp_reports" },
         { title: "Settings", url: "/expenses/settings", icon: Settings, permissionKey: "exp_settings" },
       ],

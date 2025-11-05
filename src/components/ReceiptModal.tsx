@@ -30,7 +30,7 @@ export default function ReceiptModal({ isOpen, onClose, receiptData }: ReceiptMo
   const fetchPOSSettings = async () => {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/pos/settings/', {
+      const response = await fetch('http://localhost:8000/pos/settings/', {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),

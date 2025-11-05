@@ -88,6 +88,8 @@ import SupplierOrders from "./pages/suppliers/Orders";
 import SupplierReports from "./pages/suppliers/SupplierReports";
 import SupplierManagement from "./pages/suppliers/SupplierManagement";
 import SupplierDetail from "./pages/suppliers/SupplierDetail";
+import MedicineDetail from "./pages/inventory/MedicineDetail";
+import BillDetail from "./pages/pos/BillDetail";
 import SupplierSettings from "./pages/suppliers/Settings";
 import ComplianceTracking from "./pages/compliance/Tracking";
 import NetworkSettings from "./pages/network/Settings";
@@ -96,6 +98,7 @@ import CustomerSettings from "./pages/customers/Settings";
 import VendorPortal from "./pages/VendorPortal";
 import DocumentManagement from "./pages/DocumentManagement";
 import AuditManagement from "./pages/AuditManagement";
+import Returns from "./pages/Returns";
 
 const queryClient = new QueryClient();
 
@@ -116,17 +119,20 @@ const App = () => (
             
             {/* POS Module Routes */}
             <Route path="pos/billing" element={<POSBilling />} />
+            <Route path="pos/bill/:billNumber" element={<BillDetail />} />
             <Route path="pos/stock-transfers" element={<StockTransfers />} />
             <Route path="pos/reports" element={<POSReports />} />
             <Route path="pos/settings" element={<POSSettings />} />
 
             {/* Inventory Module Routes */}
+            <Route path="inventory" element={<InventoryDashboard />} />
             <Route path="inventory/dashboard" element={<InventoryDashboard />} />
             <Route path="inventory/stock-management" element={<StockManagement />} />
             <Route path="inventory/manage-orders" element={<ManageOrders />} />
             <Route path="inventory/purchase-orders" element={<PurchaseOrders />} />
             <Route path="inventory/stock-transfers" element={<StockTransfers />} />
             <Route path="inventory/medication-list" element={<MedicationList />} />
+            <Route path="inventory/medicine/:id" element={<MedicineDetail />} />
             <Route path="inventory/reports" element={<InventoryReports />} />
             <Route path="inventory/settings" element={<InventorySettings />} />
 
@@ -137,6 +143,7 @@ const App = () => (
             <Route path="expenses/settings" element={<ExpenseSettings />} />
 
             {/* Suppliers Module Routes */}
+            <Route path="suppliers" element={<SupplierManagement />} />
             <Route path="suppliers/dashboard" element={<SuppliersDashboard />} />
             <Route path="suppliers/management" element={<SupplierManagement />} />
             <Route path="suppliers/detail/:id" element={<SupplierDetail />} />
@@ -163,6 +170,7 @@ const App = () => (
             <Route path="network/settings" element={<NetworkSettings />} />
 
             {/* Patients Module Routes */}
+            <Route path="patients" element={<PatientDirectory />} />
             <Route path="patients/directory" element={<PatientDirectory />} />
             <Route path="patients/detail/:id" element={<PatientDetail />} />
             <Route path="patients/records" element={<MedicalRecords />} />
@@ -193,6 +201,7 @@ const App = () => (
             <Route path="audit" element={<AuditManagement />} />
             <Route path="staff/dashboard" element={<StaffDashboard />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="returns" element={<Returns />} />
             
             {/* Admin Routes for Super Admin */}
             <Route path="admin/dashboard" element={<SuperAdminDashboard />} />

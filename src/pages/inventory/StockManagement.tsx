@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Plus, Edit, Trash2, AlertTriangle, Package, TrendingUp, TrendingDown, Building2, RotateCcw, Clock, Calendar, MapPin } from "lucide-react";
+import { Search, Plus, Edit, Trash2, AlertTriangle, Package, TrendingUp, TrendingDown, Building2, RotateCcw, Clock, Calendar, MapPin, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // API Base Configuration
@@ -87,6 +87,28 @@ export default function StockManagement() {
 
   const [purchaseHistory, setPurchaseHistory] = useState([]);
   const [showPurchaseHistory, setShowPurchaseHistory] = useState(false);
+
+  // Bulk upload states
+  const [isBulkUploadDialogOpen, setIsBulkUploadDialogOpen] = useState(false);
+  const [bulkUploadData, setBulkUploadData] = useState({
+    supplier_name: '',
+    supplier_contact: '',
+    supplier_id: null,
+    supplier_type: 'custom',
+    payment_method: 'cash',
+    payment_date: new Date().toISOString().split('T')[0],
+    paid_amount: '',
+    notes: '',
+    file: null
+  });
+  const [bulkUploadProgress, setBulkUploadProgress] = useState({
+    uploading: false,
+    completed: false,
+    created_count: 0,
+    errors: [],
+    transaction_number: ''
+  });
+  const [showBulkSupplierSuggestions, setBulkSupplierSuggestions] = useState(false);
 
   // Update payment total when items change
   useEffect(() => {
@@ -600,6 +622,154 @@ export default function StockManagement() {
     setIsRestockDialogOpen(true);
   };
 
+  // Download template function
+  const downloadTemplate = async () => {
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/inventory/inventory/download-template/`, {
+        method: 'GET',
+        headers: {
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+      });
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = 'inventory_upload_template.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        toast({
+          title: "Success",
+          description: "Template downloaded successfully",
+        });
+      } else {
+        throw new Error('Failed to download template');
+      }
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      toast({
+        title: "Error",
+        description: "Failed to download template",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Bulk upload handler
+  const handleBulkUpload = async () => {
+    if (!bulkUploadData.supplier_name || !bulkUploadData.file) {
+      toast({
+        title: "Error",
+        description: "Please provide supplier name and select a file",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setBulkUploadProgress({ ...bulkUploadProgress, uploading: true });
+
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const formData = new FormData();
+      
+      formData.append('file', bulkUploadData.file);
+      formData.append('supplier_name', bulkUploadData.supplier_name);
+      formData.append('supplier_contact', bulkUploadData.supplier_contact);
+      if (bulkUploadData.supplier_id) {
+        formData.append('supplier_id', bulkUploadData.supplier_id);
+      }
+      formData.append('supplier_type', bulkUploadData.supplier_type);
+      formData.append('payment_method', bulkUploadData.payment_method);
+      formData.append('payment_date', bulkUploadData.payment_date);
+      if (bulkUploadData.paid_amount) {
+        formData.append('paid_amount', bulkUploadData.paid_amount);
+      }
+      formData.append('notes', bulkUploadData.notes);
+      
+      const response = await fetch(`${API_BASE_URL}/inventory/inventory/bulk-upload/`, {
+        method: 'POST',
+        headers: {
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+        body: formData,
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setBulkUploadProgress({
+          uploading: false,
+          completed: true,
+          created_count: data.created_count,
+          errors: data.errors || [],
+          transaction_number: data.transaction_number
+        });
+        
+        toast({
+          title: "Success",
+          description: data.message,
+        });
+        
+        // Refresh inventory and purchase history
+        fetchInventory();
+        fetchPurchaseHistory();
+        
+        // Reset form after successful upload
+        setTimeout(() => {
+          setBulkUploadData({
+            supplier_name: '',
+            supplier_contact: '',
+            supplier_id: null,
+            supplier_type: 'custom',
+            payment_method: 'cash',
+            payment_date: new Date().toISOString().split('T')[0],
+            paid_amount: '',
+            notes: '',
+            file: null
+          });
+          setBulkSupplierSuggestions(false);
+        }, 3000);
+        
+      } else {
+        setBulkUploadProgress({
+          uploading: false,
+          completed: true,
+          created_count: 0,
+          errors: [data.error || 'Upload failed'],
+          transaction_number: ''
+        });
+        
+        toast({
+          title: "Error",
+          description: data.error || "Failed to upload inventory",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error uploading bulk inventory:', error);
+      setBulkUploadProgress({
+        uploading: false,
+        completed: true,
+        created_count: 0,
+        errors: ['Network error or file processing failed'],
+        transaction_number: ''
+      });
+      
+      toast({
+        title: "Error",
+        description: "Failed to upload inventory",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleSaveStock = async () => {
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
@@ -680,6 +850,222 @@ export default function StockManagement() {
             <Clock size={16} className="mr-2" />
             Purchase History
           </Button>
+          <Dialog open={isBulkUploadDialogOpen} onOpenChange={setIsBulkUploadDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Upload size={16} className="mr-2" />
+                Bulk Upload
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Bulk Upload Inventory</DialogTitle>
+                <DialogDescription>
+                  Upload multiple inventory items from Excel or CSV file
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                {/* Supplier Information */}
+                <div className="bg-gray-50 p-4 rounded">
+                  <h4 className="text-sm font-medium mb-3">Supplier Information</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="relative">
+                      <Label>Supplier Name *</Label>
+                      <Input
+                        value={bulkUploadData.supplier_name}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setBulkUploadData({...bulkUploadData, supplier_name: value, supplier_id: null, supplier_type: 'custom'});
+                          if (value.length >= 2) {
+                            searchSuppliers(value);
+                            setBulkSupplierSuggestions(true);
+                          } else {
+                            setBulkSupplierSuggestions(false);
+                          }
+                        }}
+                        onFocus={() => {
+                          if (bulkUploadData.supplier_name.length >= 2) {
+                            setBulkSupplierSuggestions(true);
+                          }
+                        }}
+                        onBlur={() => {
+                          setTimeout(() => {
+                            setBulkSupplierSuggestions(false);
+                          }, 300);
+                        }}
+                        placeholder="Search or enter supplier name"
+                      />
+                      {showBulkSupplierSuggestions && supplierSuggestions.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-md shadow-lg z-10 max-h-32 overflow-y-auto">
+                          {supplierSuggestions.map(supplier => (
+                            <div
+                              key={`${supplier.type}-${supplier.id}`}
+                              className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setBulkUploadData({
+                                  ...bulkUploadData,
+                                  supplier_name: supplier.name, 
+                                  supplier_contact: supplier.contact,
+                                  supplier_id: supplier.id,
+                                  supplier_type: supplier.type
+                                });
+                                setBulkSupplierSuggestions(false);
+                              }}
+                            >
+                              <div className="font-medium">{supplier.name}</div>
+                              <div className="text-gray-500 text-xs">{supplier.contact}</div>
+                              <div className="text-xs text-blue-500">{supplier.type === 'user' ? 'Supplier User' : 'Custom'}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <Label>Contact</Label>
+                      <Input
+                        value={bulkUploadData.supplier_contact}
+                        onChange={(e) => setBulkUploadData({...bulkUploadData, supplier_contact: e.target.value})}
+                        placeholder="Phone or email"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment Information */}
+                <div className="bg-blue-50 p-4 rounded">
+                  <h4 className="text-sm font-medium mb-3">Payment Information</h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <Label>Payment Method</Label>
+                      <Select value={bulkUploadData.payment_method} onValueChange={(value) => setBulkUploadData({...bulkUploadData, payment_method: value})}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="cash">Cash</SelectItem>
+                          <SelectItem value="credit">Credit</SelectItem>
+                          <SelectItem value="partial">Partial</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Payment Date</Label>
+                      <Input
+                        type="date"
+                        value={bulkUploadData.payment_date}
+                        onChange={(e) => setBulkUploadData({...bulkUploadData, payment_date: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <Label>Paid Amount (Optional)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={bulkUploadData.paid_amount}
+                        onChange={(e) => setBulkUploadData({...bulkUploadData, paid_amount: e.target.value})}
+                        placeholder="Leave empty for full payment"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <Label>Notes</Label>
+                    <Textarea
+                      value={bulkUploadData.notes}
+                      onChange={(e) => setBulkUploadData({...bulkUploadData, notes: e.target.value})}
+                      placeholder="Additional notes about this purchase"
+                      rows={2}
+                    />
+                  </div>
+                </div>
+
+                {/* File Upload */}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <Label>Upload File *</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={downloadTemplate}
+                    >
+                      Download Template
+                    </Button>
+                  </div>
+                  <Input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={(e) => setBulkUploadData({...bulkUploadData, file: e.target.files[0]})}
+                  />
+                  <p className="text-xs text-gray-500">
+                    Supported formats: Excel (.xlsx, .xls) and CSV (.csv)
+                  </p>
+                </div>
+
+                {/* Upload Progress */}
+                {bulkUploadProgress.uploading && (
+                  <div className="bg-yellow-50 p-3 rounded">
+                    <div className="flex items-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                      <span className="text-sm">Processing file...</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Upload Results */}
+                {bulkUploadProgress.completed && (
+                  <div className="space-y-2">
+                    <div className="bg-green-50 p-3 rounded">
+                      <h5 className="text-sm font-medium text-green-800">Upload Completed</h5>
+                      <p className="text-sm text-green-700">
+                        Successfully created {bulkUploadProgress.created_count} items
+                      </p>
+                      {bulkUploadProgress.transaction_number && (
+                        <p className="text-xs text-green-600">
+                          Transaction: {bulkUploadProgress.transaction_number}
+                        </p>
+                      )}
+                    </div>
+                    {bulkUploadProgress.errors && bulkUploadProgress.errors.length > 0 && (
+                      <div className="bg-red-50 p-3 rounded max-h-32 overflow-y-auto">
+                        <h5 className="text-sm font-medium text-red-800 mb-1">Errors:</h5>
+                        {bulkUploadProgress.errors.map((error, index) => (
+                          <p key={index} className="text-xs text-red-700">{error}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => {
+                  setIsBulkUploadDialogOpen(false);
+                  setBulkUploadProgress({ uploading: false, completed: false, created_count: 0, errors: [], transaction_number: '' });
+                  setBulkUploadData({
+                    supplier_name: '',
+                    supplier_contact: '',
+                    supplier_id: null,
+                    supplier_type: 'custom',
+                    payment_method: 'cash',
+                    payment_date: new Date().toISOString().split('T')[0],
+                    paid_amount: '',
+                    notes: '',
+                    file: null
+                  });
+                }}>
+                  {bulkUploadProgress.completed ? 'Close' : 'Cancel'}
+                </Button>
+                {!bulkUploadProgress.completed && (
+                  <Button 
+                    onClick={handleBulkUpload}
+                    disabled={!bulkUploadData.supplier_name || !bulkUploadData.file || bulkUploadProgress.uploading}
+                  >
+                    {bulkUploadProgress.uploading ? 'Uploading...' : 'Upload Inventory'}
+                  </Button>
+                )}
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button>

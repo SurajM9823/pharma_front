@@ -24,8 +24,23 @@ export default function PatientDetail() {
   const [loading, setLoading] = useState(true);
   const [selectedSale, setSelectedSale] = useState(null);
   const [showSaleDialog, setShowSaleDialog] = useState(false);
+  const [showCreditPaymentDialog, setShowCreditPaymentDialog] = useState(false);
+  const [selectedCredit, setSelectedCredit] = useState(null);
   const [isEditingPatient, setIsEditingPatient] = useState(false);
   const [editedPatient, setEditedPatient] = useState<any>({});
+  const [creditPaymentData, setCreditPaymentData] = useState({
+    amount: '',
+    payment_method: 'cash',
+    reference_number: ''
+  });
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [showCreditApprovalDialog, setShowCreditApprovalDialog] = useState(false);
+  const [creditApprovalData, setCreditApprovalData] = useState({
+    credit_limit: '',
+    phone: '',
+    address: ''
+  });
+  const [isProcessingCreditApproval, setIsProcessingCreditApproval] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -43,6 +58,7 @@ export default function PatientDetail() {
 
         if (patientResponse.ok) {
           const patient = await patientResponse.json();
+          console.log('Patient data received:', patient); // Debug log
           setPatientData(patient);
           setEditedPatient(patient); // Initialize edited patient data
         } else {
@@ -111,10 +127,11 @@ export default function PatientDetail() {
   };
 
   const getTotalCredit = () => {
-    // Calculate credit from both credit history and purchase history
-    const creditFromCreditHistory = creditHistory.reduce((sum, sale) => sum + parseFloat(sale.credit_amount || 0), 0);
-    const creditFromPurchaseHistory = purchaseHistory.reduce((sum, sale) => sum + parseFloat(sale.creditAmount || sale.credit_amount || 0), 0);
-    return creditFromCreditHistory + creditFromPurchaseHistory;
+    // Calculate credit from sales data (most accurate source)
+    // Use only creditHistory since it contains the actual outstanding credit amounts
+    const calculatedBalance = creditHistory.reduce((sum, sale) => sum + parseFloat(sale.credit_amount || 0), 0);
+    console.log('Using calculated credit balance from credit history:', calculatedBalance);
+    return calculatedBalance;
   };
 
   const getTotalPaid = () => {
@@ -246,6 +263,266 @@ export default function PatientDetail() {
       ...prev,
       [field]: value
     }));
+  };
+
+  const handleCreditPayment = (credit) => {
+    setSelectedCredit(credit);
+    setCreditPaymentData({
+      amount: credit.credit_amount.toString(),
+      payment_method: 'cash',
+      reference_number: ''
+    });
+    setShowCreditPaymentDialog(true);
+  };
+
+  const handleCreditPaymentSubmit = async () => {
+    if (!selectedCredit) return;
+
+    const paymentAmount = parseFloat(creditPaymentData.amount);
+    if (paymentAmount <= 0 || paymentAmount > selectedCredit.credit_amount) {
+      toast({
+        title: "Invalid Amount",
+        description: "Payment amount must be greater than 0 and not exceed the credit amount",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsProcessingPayment(true);
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/backend'}/pos/sales/${selectedCredit.sale_number}/pay-credit/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          amount: paymentAmount,
+          payment_method: creditPaymentData.payment_method,
+          reference_number: creditPaymentData.reference_number || ''
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        toast({
+          title: "Payment Successful",
+          description: `Payment of NPR ${paymentAmount.toLocaleString()} processed successfully`,
+        });
+
+        // Refresh the data
+        const fetchPatientData = async () => {
+          try {
+            const patientResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/backend'}/patients/${id}/`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+
+            if (patientResponse.ok) {
+              const patient = await patientResponse.json();
+              setPatientData(patient);
+            }
+
+            // Refresh purchase history
+            const salesResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/backend'}/pos/sales/?patient_id=${id}`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+
+            if (salesResponse.ok) {
+              const salesData = await salesResponse.json();
+              const sales = salesData.results || salesData || [];
+              setPurchaseHistory(sales);
+            }
+
+            // Refresh credit history
+            const creditResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/backend'}/pos/credit-history/?patient_id=${id}`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+
+            if (creditResponse.ok) {
+              const creditData = await creditResponse.json();
+              const credits = creditData.results || creditData || [];
+              setCreditHistory(credits);
+            }
+
+          } catch (error) {
+            console.error('Error refreshing data:', error);
+          }
+        };
+
+        await fetchPatientData();
+
+        setShowCreditPaymentDialog(false);
+        setSelectedCredit(null);
+        setCreditPaymentData({
+          amount: '',
+          payment_method: 'cash',
+          reference_number: ''
+        });
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Payment Failed",
+          description: errorData.error || "Failed to process payment",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error processing credit payment:', error);
+      toast({
+        title: "Error",
+        description: "Failed to process payment",
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  const handleCreditApproval = () => {
+    if (!patientData) return;
+
+    // If patient already has credit, this is an adjustment
+    const isAdjustment = patientData.credit_allowed;
+
+    setCreditApprovalData({
+      credit_limit: patientData.credit_limit?.toString() || '',
+      phone: patientData.phone || '',
+      address: patientData.address || ''
+    });
+    setShowCreditApprovalDialog(true);
+  };
+
+  const handleCreditApprovalSubmit = async () => {
+    if (!patientData) return;
+
+    const creditLimit = parseFloat(creditApprovalData.credit_limit);
+    if (creditLimit <= 0) {
+      toast({
+        title: "Invalid Credit Limit",
+        description: "Credit limit must be greater than 0",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!creditApprovalData.phone.trim() || !creditApprovalData.address.trim()) {
+      toast({
+        title: "Missing Information",
+        description: "Phone number and address are required for credit approval",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsProcessingCreditApproval(true);
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/backend'}/patients/${patientData.id}/credit-status/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          credit_allowed: true,
+          credit_limit: creditLimit
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        toast({
+          title: "Credit Approved",
+          description: `Credit has been approved with limit of NPR ${creditLimit.toLocaleString()}`,
+        });
+
+        // Update patient data
+        setPatientData(prev => ({
+          ...prev,
+          credit_allowed: true,
+          credit_limit: creditLimit
+        }));
+
+        setShowCreditApprovalDialog(false);
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Credit Approval Failed",
+          description: errorData.error || "Failed to approve credit",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error approving credit:', error);
+      toast({
+        title: "Error",
+        description: "Failed to approve credit",
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessingCreditApproval(false);
+    }
+  };
+
+  const handleDisableCredit = async () => {
+    if (!patientData) return;
+
+    setIsProcessingCreditApproval(true);
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/backend'}/patients/${patientData.id}/credit-status/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          credit_allowed: false,
+          credit_limit: 0
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        toast({
+          title: "Credit Disabled",
+          description: "Credit has been disabled for this patient",
+        });
+
+        // Update patient data
+        setPatientData(prev => ({
+          ...prev,
+          credit_allowed: false,
+          credit_limit: 0
+        }));
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Failed to Disable Credit",
+          description: errorData.error || "Failed to disable credit",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error disabling credit:', error);
+      toast({
+        title: "Error",
+        description: "Failed to disable credit",
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessingCreditApproval(false);
+    }
   };
 
   if (loading) {
@@ -595,7 +872,42 @@ export default function PatientDetail() {
                 <Receipt size={18} />
                 Purchase History
               </span>
-              <Badge variant="outline">{purchaseHistory.length} transactions</Badge>
+              <div className="flex gap-2">
+                {patientData?.credit_allowed ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCreditApproval}
+                      disabled={isProcessingCreditApproval}
+                      className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                    >
+                      <Edit size={14} className="mr-1" />
+                      Adjust Credit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleDisableCredit}
+                      disabled={isProcessingCreditApproval}
+                      className="text-red-600 border-red-600 hover:bg-red-50"
+                    >
+                      <X size={14} className="mr-1" />
+                      Disable Credit
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={handleCreditApproval}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <Plus size={14} className="mr-1" />
+                    Allow Credit
+                  </Button>
+                )}
+                <Badge variant="outline">{purchaseHistory.length} transactions</Badge>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -680,30 +992,202 @@ export default function PatientDetail() {
           <CardContent>
             <div className="space-y-4">
               {creditHistory.map((credit) => (
-                <div key={credit.id} className="border rounded-lg p-4 bg-orange-50 border-orange-200">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-medium">Bill #{credit.sale_number}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {new Date(credit.created_at).toLocaleDateString()}
-                      </div>
-                      <div className="text-sm mt-1">
-                        Total: NPR {parseFloat(credit.total_amount || 0).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-lg text-orange-600">
-                        NPR {parseFloat(credit.credit_amount || 0).toLocaleString()}
-                      </div>
-                      <div className="text-sm text-muted-foreground">Outstanding</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                 <div key={credit.id} className="border rounded-lg p-4 bg-orange-50 border-orange-200">
+                   <div className="flex justify-between items-start">
+                     <div>
+                       <div className="font-medium">Bill #{credit.sale_number}</div>
+                       <div className="text-sm text-muted-foreground">
+                         {new Date(credit.created_at).toLocaleDateString()}
+                       </div>
+                       <div className="text-sm mt-1">
+                         Total: NPR {parseFloat(credit.total_amount || 0).toLocaleString()}
+                       </div>
+                     </div>
+                     <div className="text-right">
+                       <div className="font-bold text-lg text-orange-600">
+                         NPR {parseFloat(credit.credit_amount || 0).toLocaleString()}
+                       </div>
+                       <div className="text-sm text-muted-foreground">Outstanding</div>
+                       <Button
+                         size="sm"
+                         className="mt-2 bg-green-600 hover:bg-green-700"
+                         onClick={() => handleCreditPayment(credit)}
+                       >
+                         <DollarSign size={14} className="mr-1" />
+                         Pay Credit
+                       </Button>
+                     </div>
+                   </div>
+                 </div>
+               ))}
             </div>
           </CardContent>
         </Card>
       )}
+
+      {/* Credit Approval Dialog */}
+      <Dialog open={showCreditApprovalDialog} onOpenChange={setShowCreditApprovalDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {patientData?.credit_allowed ? 'Adjust Credit Settings' : 'Allow Credit for Patient'}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className={`p-4 rounded-lg border ${patientData?.credit_allowed ? 'bg-blue-50 border-blue-200' : 'bg-green-50 border-green-200'}`}>
+              <div className="text-sm text-muted-foreground">Patient Information</div>
+              <div className="font-medium">{patientData?.full_name || `${patientData?.first_name || ''} ${patientData?.last_name || ''}`.trim()}</div>
+              <div className="text-sm text-muted-foreground">ID: {patientData?.patient_id}</div>
+              {patientData?.credit_allowed && (
+                <div className="text-sm mt-2">
+                  <div>Current Credit Limit: NPR {parseFloat(patientData.credit_limit || 0).toLocaleString()}</div>
+                  <div>Outstanding Balance: NPR {getTotalCredit().toLocaleString()}</div>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="credit-limit">Credit Limit (NPR)</Label>
+                <Input
+                  id="credit-limit"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={creditApprovalData.credit_limit}
+                  onChange={(e) => setCreditApprovalData(prev => ({ ...prev, credit_limit: e.target.value }))}
+                  placeholder="Enter credit limit"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="patient-phone">Phone Number</Label>
+                <Input
+                  id="patient-phone"
+                  value={creditApprovalData.phone}
+                  onChange={(e) => setCreditApprovalData(prev => ({ ...prev, phone: e.target.value }))}
+                  placeholder="Phone number is required"
+                />
+                {!creditApprovalData.phone.trim() && (
+                  <div className="text-sm text-red-600 mt-1">Phone number is required for credit approval</div>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="patient-address">Address</Label>
+                <Textarea
+                  id="patient-address"
+                  value={creditApprovalData.address}
+                  onChange={(e) => setCreditApprovalData(prev => ({ ...prev, address: e.target.value }))}
+                  placeholder="Address is required for credit approval"
+                  rows={3}
+                />
+                {!creditApprovalData.address.trim() && (
+                  <div className="text-sm text-red-600 mt-1">Address is required for credit approval</div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setShowCreditApprovalDialog(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreditApprovalSubmit}
+                disabled={isProcessingCreditApproval}
+                className={`flex-1 ${patientData?.credit_allowed ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
+              >
+                {isProcessingCreditApproval ? 'Processing...' : (patientData?.credit_allowed ? 'Update Credit Settings' : 'Approve Credit')}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Credit Payment Dialog */}
+      <Dialog open={showCreditPaymentDialog} onOpenChange={setShowCreditPaymentDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pay Credit - Bill #{selectedCredit?.sale_number}</DialogTitle>
+          </DialogHeader>
+
+          {selectedCredit && (
+            <div className="space-y-4">
+              <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
+                <div className="text-sm text-muted-foreground">Outstanding Credit</div>
+                <div className="text-2xl font-bold text-orange-600">
+                  NPR {parseFloat(selectedCredit.credit_amount || 0).toLocaleString()}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="payment-amount">Payment Amount (NPR)</Label>
+                  <Input
+                    id="payment-amount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={selectedCredit.credit_amount}
+                    value={creditPaymentData.amount}
+                    onChange={(e) => setCreditPaymentData(prev => ({ ...prev, amount: e.target.value }))}
+                    placeholder="Enter payment amount"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="payment-method">Payment Method</Label>
+                  <Select
+                    value={creditPaymentData.payment_method}
+                    onValueChange={(value) => setCreditPaymentData(prev => ({ ...prev, payment_method: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="online">Online</SelectItem>
+                      <SelectItem value="card">Card</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="reference-number">Reference Number (Optional)</Label>
+                  <Input
+                    id="reference-number"
+                    value={creditPaymentData.reference_number}
+                    onChange={(e) => setCreditPaymentData(prev => ({ ...prev, reference_number: e.target.value }))}
+                    placeholder="Transaction ID or reference"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowCreditPaymentDialog(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleCreditPaymentSubmit}
+                  disabled={isProcessingPayment}
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                >
+                  {isProcessingPayment ? 'Processing...' : 'Process Payment'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Sale Details Dialog */}
       <Dialog open={showSaleDialog} onOpenChange={setShowSaleDialog}>

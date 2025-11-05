@@ -10,6 +10,9 @@ import {
   Search, Plus, Edit, Eye, Trash2, UserCog, 
   Building, Phone, Mail, MapPin, Star, DollarSign, Filter
 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { NavLink } from "react-router-dom";
 
@@ -23,6 +26,16 @@ export default function SupplierManagement() {
   const [filterType, setFilterType] = useState("all");
   const [activeTab, setActiveTab] = useState("all");
   const [paymentSummary, setPaymentSummary] = useState({ totalCredit: 0, totalSuppliers: 0 });
+  const [isAddSupplierDialogOpen, setIsAddSupplierDialogOpen] = useState(false);
+  const [newSupplier, setNewSupplier] = useState({
+    name: '',
+    contact_person: '',
+    phone: '',
+    email: '',
+    address: ''
+  });
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState(null);
   const { toast } = useToast();
 
   const fetchSuppliers = async () => {
@@ -32,6 +45,14 @@ export default function SupplierManagement() {
       
       // Fetch suppliers with transaction history from ledger (branch-specific)
       const ledgerSuppliersResponse = await fetch(`${API_BASE_URL}/inventory/supplier-ledger/suppliers/`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+      });
+      
+      // Fetch all custom suppliers (including those without transactions)
+      const customSuppliersResponse = await fetch(`${API_BASE_URL}/inventory/custom-suppliers/`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -56,12 +77,17 @@ export default function SupplierManagement() {
       
       let allSuppliers = [];
       
-      // Get both responses
+      // Get all responses
       let ledgerSuppliers = [];
+      let customSuppliersList = [];
       let registeredSuppliersList = [];
       
       if (ledgerSuppliersResponse.ok) {
         ledgerSuppliers = await ledgerSuppliersResponse.json();
+      }
+      
+      if (customSuppliersResponse.ok) {
+        customSuppliersList = await customSuppliersResponse.json();
       }
       
       if (suppliersResponse.ok) {
@@ -72,43 +98,55 @@ export default function SupplierManagement() {
       // Use a Map to avoid duplicates based on supplier ID
       const suppliersMap = new Map();
       
-      // Process each ledger supplier and avoid duplicates
+      // First, add all custom suppliers (including those without transactions)
+      customSuppliersList.forEach(customSupplier => {
+        const supplierId = `custom_${customSupplier.id}`;
+        const ledgerData = ledgerSuppliers.find(ls => ls.supplier_name === customSupplier.name);
+        
+        suppliersMap.set(supplierId, {
+          id: supplierId,
+          first_name: customSupplier.name.split(' ')[0] || '',
+          last_name: customSupplier.name.split(' ').slice(1).join(' ') || '',
+          organization_name: customSupplier.name,
+          email: customSupplier.email || 'N/A',
+          phone: customSupplier.phone || 'N/A',
+          supplier_type: 'custom',
+          is_active: customSupplier.is_active,
+          total_credit: ledgerData?.total_credit || 0,
+          pending_credit: ledgerData?.pending_credit || 0,
+          contact_person: customSupplier.contact_person,
+          address: customSupplier.address,
+          branch_name: customSupplier.branch_name || 'N/A'
+        });
+      });
+      
+      // Then, process ledger suppliers for pharmacy suppliers
       ledgerSuppliers.forEach(ledgerSupplier => {
         const supplierName = ledgerSupplier.supplier_name;
         
-        // Try to find matching registered supplier
-        const matchingRegisteredSupplier = registeredSuppliersList.find(supplier => {
-          const fullName = `${supplier.first_name} ${supplier.last_name}`.trim();
-          return fullName === supplierName || supplier.organization_name === supplierName;
-        });
+        // Skip if already added as custom supplier
+        const existingCustom = Array.from(suppliersMap.values()).find(s => 
+          s.supplier_type === 'custom' && s.organization_name === supplierName
+        );
         
-        if (matchingRegisteredSupplier) {
-          // Add as pharmacy supplier (registered user) - use supplier ID as key
-          const supplierId = matchingRegisteredSupplier.id;
-          if (!suppliersMap.has(supplierId)) {
-            suppliersMap.set(supplierId, {
-              ...matchingRegisteredSupplier,
-              supplier_type: 'pharmacy',
-              total_credit: ledgerSupplier.total_credit,
-              pending_credit: ledgerSupplier.pending_credit
-            });
-          }
-        } else {
-          // Add as custom supplier (no registered user found)
-          const customId = `custom_${supplierName.replace(/\s+/g, '_')}`;
-          if (!suppliersMap.has(customId)) {
-            suppliersMap.set(customId, {
-              id: customId,
-              first_name: supplierName.split(' ')[0] || '',
-              last_name: supplierName.split(' ').slice(1).join(' ') || '',
-              organization_name: supplierName,
-              email: 'N/A',
-              phone: 'N/A',
-              supplier_type: 'custom',
-              is_active: true,
-              total_credit: ledgerSupplier.total_credit,
-              pending_credit: ledgerSupplier.pending_credit
-            });
+        if (!existingCustom) {
+          // Try to find matching registered supplier
+          const matchingRegisteredSupplier = registeredSuppliersList.find(supplier => {
+            const fullName = `${supplier.first_name} ${supplier.last_name}`.trim();
+            return fullName === supplierName || supplier.organization_name === supplierName;
+          });
+          
+          if (matchingRegisteredSupplier) {
+            // Add as pharmacy supplier (registered user)
+            const supplierId = matchingRegisteredSupplier.id;
+            if (!suppliersMap.has(supplierId)) {
+              suppliersMap.set(supplierId, {
+                ...matchingRegisteredSupplier,
+                supplier_type: 'pharmacy',
+                total_credit: ledgerSupplier.total_credit,
+                pending_credit: ledgerSupplier.pending_credit
+              });
+            }
           }
         }
       });
@@ -127,11 +165,110 @@ export default function SupplierManagement() {
       console.error('Error fetching suppliers:', error);
       toast({
         title: "Error",
-        description: "Failed to load suppliers with transaction history",
+        description: "Failed to load suppliers",
         variant: "destructive"
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateSupplier = async () => {
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/inventory/custom-suppliers/create/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+        body: JSON.stringify(newSupplier)
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: data.message
+        });
+        setIsAddSupplierDialogOpen(false);
+        setNewSupplier({
+          name: '',
+          contact_person: '',
+          phone: '',
+          email: '',
+          address: ''
+        });
+        fetchSuppliers(); // Refresh the list
+      } else {
+        toast({
+          title: "Error",
+          description: data.error || "Failed to create supplier",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error creating supplier:', error);
+      toast({
+        title: "Error",
+        description: "Failed to create supplier",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleEditSupplier = (supplier) => {
+    if (supplier.supplier_type === 'custom') {
+      const supplierId = supplier.id.replace('custom_', '');
+      setEditingSupplier({
+        id: supplierId,
+        name: supplier.organization_name,
+        contact_person: supplier.contact_person || '',
+        phone: supplier.phone === 'N/A' ? '' : supplier.phone,
+        email: supplier.email === 'N/A' ? '' : supplier.email,
+        address: supplier.address || ''
+      });
+      setIsEditDialogOpen(true);
+    }
+  };
+
+  const handleUpdateSupplier = async () => {
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/inventory/custom-suppliers/${editingSupplier.id}/`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+        body: JSON.stringify(editingSupplier)
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: data.message
+        });
+        setIsEditDialogOpen(false);
+        setEditingSupplier(null);
+        fetchSuppliers(); // Refresh the list
+      } else {
+        toast({
+          title: "Error",
+          description: data.error || "Failed to update supplier",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error updating supplier:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update supplier",
+        variant: "destructive"
+      });
     }
   };
 
@@ -169,10 +306,150 @@ export default function SupplierManagement() {
           <h1 className="text-3xl font-bold">Supplier Management</h1>
           <p className="text-muted-foreground">Manage suppliers with transaction history for your branch</p>
         </div>
-        <Button>
-          <Plus size={16} className="mr-2" />
-          Add Supplier
-        </Button>
+        <Dialog open={isAddSupplierDialogOpen} onOpenChange={setIsAddSupplierDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus size={16} className="mr-2" />
+              Add Supplier
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Add Custom Supplier</DialogTitle>
+              <DialogDescription>
+                Create a new custom supplier for your organization
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="name">Supplier Name *</Label>
+                <Input
+                  id="name"
+                  value={newSupplier.name}
+                  onChange={(e) => setNewSupplier({...newSupplier, name: e.target.value})}
+                  placeholder="Enter supplier name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="contact_person">Contact Person</Label>
+                <Input
+                  id="contact_person"
+                  value={newSupplier.contact_person}
+                  onChange={(e) => setNewSupplier({...newSupplier, contact_person: e.target.value})}
+                  placeholder="Enter contact person name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="phone">Phone</Label>
+                <Input
+                  id="phone"
+                  value={newSupplier.phone}
+                  onChange={(e) => setNewSupplier({...newSupplier, phone: e.target.value})}
+                  placeholder="Enter phone number"
+                />
+              </div>
+              <div>
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={newSupplier.email}
+                  onChange={(e) => setNewSupplier({...newSupplier, email: e.target.value})}
+                  placeholder="Enter email address"
+                />
+              </div>
+              <div>
+                <Label htmlFor="address">Address</Label>
+                <Textarea
+                  id="address"
+                  value={newSupplier.address}
+                  onChange={(e) => setNewSupplier({...newSupplier, address: e.target.value})}
+                  placeholder="Enter supplier address"
+                  rows={3}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddSupplierDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleCreateSupplier} disabled={!newSupplier.name.trim()}>
+                Create Supplier
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Supplier Dialog */}
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Custom Supplier</DialogTitle>
+              <DialogDescription>
+                Update supplier information
+              </DialogDescription>
+            </DialogHeader>
+            {editingSupplier && (
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="edit_name">Supplier Name *</Label>
+                  <Input
+                    id="edit_name"
+                    value={editingSupplier.name}
+                    onChange={(e) => setEditingSupplier({...editingSupplier, name: e.target.value})}
+                    placeholder="Enter supplier name"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit_contact_person">Contact Person</Label>
+                  <Input
+                    id="edit_contact_person"
+                    value={editingSupplier.contact_person}
+                    onChange={(e) => setEditingSupplier({...editingSupplier, contact_person: e.target.value})}
+                    placeholder="Enter contact person name"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit_phone">Phone</Label>
+                  <Input
+                    id="edit_phone"
+                    value={editingSupplier.phone}
+                    onChange={(e) => setEditingSupplier({...editingSupplier, phone: e.target.value})}
+                    placeholder="Enter phone number"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit_email">Email</Label>
+                  <Input
+                    id="edit_email"
+                    type="email"
+                    value={editingSupplier.email}
+                    onChange={(e) => setEditingSupplier({...editingSupplier, email: e.target.value})}
+                    placeholder="Enter email address"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit_address">Address</Label>
+                  <Textarea
+                    id="edit_address"
+                    value={editingSupplier.address}
+                    onChange={(e) => setEditingSupplier({...editingSupplier, address: e.target.value})}
+                    placeholder="Enter supplier address"
+                    rows={3}
+                  />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleUpdateSupplier} disabled={!editingSupplier?.name?.trim()}>
+                Update Supplier
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Summary Cards */}
@@ -271,15 +548,15 @@ export default function SupplierManagement() {
             </TabsList>
             
             <TabsContent value="all" className="mt-2">
-              <SupplierTable suppliers={filteredSuppliers} loading={loading} />
+              <SupplierTable suppliers={filteredSuppliers} loading={loading} onEdit={handleEditSupplier} />
             </TabsContent>
             
             <TabsContent value="pharmacy" className="mt-2">
-              <SupplierTable suppliers={filteredSuppliers} loading={loading} />
+              <SupplierTable suppliers={filteredSuppliers} loading={loading} onEdit={handleEditSupplier} />
             </TabsContent>
             
             <TabsContent value="custom" className="mt-2">
-              <SupplierTable suppliers={filteredSuppliers} loading={loading} />
+              <SupplierTable suppliers={filteredSuppliers} loading={loading} onEdit={handleEditSupplier} />
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -289,7 +566,7 @@ export default function SupplierManagement() {
 }
 
 // Supplier Table Component
-function SupplierTable({ suppliers, loading }) {
+function SupplierTable({ suppliers, loading, onEdit }) {
   return (
     <div className="overflow-x-auto">
       <Table>
@@ -301,18 +578,19 @@ function SupplierTable({ suppliers, loading }) {
             <TableHead className="text-xs font-medium py-2">Contact</TableHead>
             <TableHead className="text-xs font-medium py-2">Type</TableHead>
             <TableHead className="text-xs font-medium py-2">Status</TableHead>
+            <TableHead className="text-xs font-medium py-2">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {loading ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-center py-4 text-xs">
+              <TableCell colSpan={7} className="text-center py-4 text-xs">
                 Loading suppliers...
               </TableCell>
             </TableRow>
           ) : suppliers.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-center py-4 text-xs">
+              <TableCell colSpan={7} className="text-center py-4 text-xs">
                 No suppliers found
               </TableCell>
             </TableRow>
@@ -354,6 +632,19 @@ function SupplierTable({ suppliers, loading }) {
                   <Badge variant={supplier.is_active ? "default" : "secondary"} className="text-xs px-2 py-0">
                     {supplier.is_active ? "Active" : "Inactive"}
                   </Badge>
+                </TableCell>
+                <TableCell className="py-2">
+                  {supplier.supplier_type === 'custom' && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onEdit(supplier)}
+                      className="h-6 w-6 p-0"
+                      title="Edit supplier"
+                    >
+                      <Edit size={12} />
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))

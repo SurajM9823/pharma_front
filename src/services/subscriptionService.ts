@@ -51,6 +51,28 @@ export interface UpdatePlanData {
   plan: string;
 }
 
+export interface BillingRecord {
+  id: number;
+  organization: number;
+  organization_name: string;
+  subscription: number | null;
+  subscription_plan: string | null;
+  transaction_type: 'invoice' | 'payment' | 'refund' | 'credit';
+  status: 'pending' | 'completed' | 'failed' | 'cancelled';
+  amount: number;
+  currency: string;
+  invoice_number: string | null;
+  payment_method: string;
+  payment_reference: string;
+  description: string;
+  billing_period_start: string | null;
+  billing_period_end: string | null;
+  due_date: string | null;
+  paid_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 class SubscriptionService {
   private baseUrl = '/organizations';
 
@@ -180,6 +202,25 @@ class SubscriptionService {
     const response = await apiClient.get(`${this.baseUrl}/subscriptions/export/`, {
       params: { format, ...filters },
       responseType: 'blob'
+    });
+    return response.data;
+  }
+
+  // Billing History methods
+  async getBillingHistory(organizationId: number, params?: {
+    transaction_type?: string;
+    status?: string;
+    start_date?: string;
+    end_date?: string;
+  }): Promise<{ billing_history: BillingRecord[]; count: number }> {
+    const response = await apiClient.get(`${this.baseUrl}/${organizationId}/billing-history/`, { params });
+    return response.data;
+  }
+
+  // Cancel subscription
+  async cancelSubscription(subscriptionId: number): Promise<OrganizationSubscription> {
+    const response = await apiClient.patch(`${this.baseUrl}/subscriptions/${subscriptionId}/`, {
+      status: 'cancelled'
     });
     return response.data;
   }

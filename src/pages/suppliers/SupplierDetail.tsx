@@ -111,25 +111,8 @@ export default function SupplierDetail() {
         
         // Check if this is a custom supplier ID
         if (id.toString().startsWith('custom_')) {
-          // Extract supplier name from custom ID
-          const supplierName = id.toString().replace('custom_', '').replace(/_/g, ' ');
-          
-          // Create mock supplier data for custom suppliers
-          setSupplierData({
-            id: id,
-            first_name: supplierName.split(' ')[0] || '',
-            last_name: supplierName.split(' ').slice(1).join(' ') || '',
-            organization_name: supplierName,
-            email: 'N/A',
-            phone: 'N/A',
-            address: 'N/A',
-            supplier_type: 'custom',
-            is_active: true,
-            joinDate: new Date().toISOString()
-          });
-          
-          // Fetch transaction history using new endpoint
-          const transactionResponse = await fetch(`${API_BASE_URL}/inventory/suppliers/custom_${supplierName.replace(/\s+/g, '_')}/transactions/`, {
+          // For custom suppliers, use the supplier transactions endpoint directly
+          const transactionResponse = await fetch(`${API_BASE_URL}/inventory/suppliers/${id}/transactions/`, {
             headers: {
               'Content-Type': 'application/json',
               ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -138,11 +121,61 @@ export default function SupplierDetail() {
           
           if (transactionResponse.ok) {
             const transactionData = await transactionResponse.json();
+            
+            // Use supplier_info from API response if available
+            if (transactionData.supplier_info) {
+              setSupplierData({
+                id: transactionData.supplier_info.id,
+                first_name: transactionData.supplier_info.name.split(' ')[0] || '',
+                last_name: transactionData.supplier_info.name.split(' ').slice(1).join(' ') || '',
+                organization_name: transactionData.supplier_info.organization_name,
+                email: transactionData.supplier_info.email,
+                phone: transactionData.supplier_info.phone,
+                address: transactionData.supplier_info.address,
+                contact_person: transactionData.supplier_info.contact_person,
+                branch_name: transactionData.supplier_info.branch_name,
+                created_at: transactionData.supplier_info.created_at,
+                is_active: transactionData.supplier_info.is_active,
+                supplier_type: transactionData.supplier_info.supplier_type
+              });
+            } else {
+              // Fallback to creating supplier data from ID
+              const supplierName = id.toString().replace('custom_', '').replace(/_/g, ' ');
+              setSupplierData({
+                id: id,
+                first_name: supplierName.split(' ')[0] || '',
+                last_name: supplierName.split(' ').slice(1).join(' ') || '',
+                organization_name: supplierName,
+                email: 'N/A',
+                phone: 'N/A',
+                address: 'N/A',
+                supplier_type: 'custom',
+                is_active: true,
+                created_at: new Date().toISOString()
+              });
+            }
+            
             setLedgerData({
               summary: transactionData.summary || {},
               transactions: transactionData.transactions || []
             });
           } else {
+            // If the new endpoint fails, try the old approach
+            const supplierName = id.toString().replace('custom_', '').replace(/_/g, ' ');
+            
+            setSupplierData({
+              id: id,
+              first_name: supplierName.split(' ')[0] || '',
+              last_name: supplierName.split(' ').slice(1).join(' ') || '',
+              organization_name: supplierName,
+              email: 'N/A',
+              phone: 'N/A',
+              address: 'N/A',
+              supplier_type: 'custom',
+              is_active: true,
+              joinDate: new Date().toISOString()
+            });
+            
             // Fallback to old endpoint
             const ledgerResponse = await fetch(`${API_BASE_URL}/inventory/supplier-ledger/detail/?supplier_name=${encodeURIComponent(supplierName)}`, {
               headers: {
@@ -156,6 +189,7 @@ export default function SupplierDetail() {
               setLedgerData(ledgerData);
             }
           }
+
         } else {
           // Handle regular user suppliers - use list API to get full data
           const supplierResponse = await fetch(`${API_BASE_URL}/auth/users/?role=supplier_admin`, {
@@ -454,9 +488,8 @@ export default function SupplierDetail() {
             });
           }
         } else {
-          // Refresh for custom suppliers - use the same supplier name from the ID
-          const customSupplierName = supplierData.id.toString().replace('custom_', '').replace(/_/g, ' ');
-          const transactionResponse = await fetch(`${API_BASE_URL}/inventory/suppliers/custom_${customSupplierName.replace(/\s+/g, '_')}/transactions/`, {
+          // Refresh for custom suppliers
+          const transactionResponse = await fetch(`${API_BASE_URL}/inventory/suppliers/${supplierData.id}/transactions/`, {
             headers: {
               'Content-Type': 'application/json',
               ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -469,19 +502,6 @@ export default function SupplierDetail() {
               summary: transactionData.summary || {},
               transactions: transactionData.transactions || []
             });
-          } else {
-            // Fallback to old endpoint
-            const ledgerResponse = await fetch(`${API_BASE_URL}/inventory/supplier-ledger/detail/?supplier_name=${encodeURIComponent(customSupplierName)}`, {
-              headers: {
-                'Content-Type': 'application/json',
-                ...(token && { 'Authorization': `Bearer ${token}` }),
-              },
-            });
-            
-            if (ledgerResponse.ok) {
-              const ledgerData = await ledgerResponse.json();
-              setLedgerData(ledgerData);
-            }
           }
         }
       } else {

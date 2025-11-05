@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { useToast } from "@/hooks/use-toast";
 import { 
-  TrendingUp, DollarSign, ShoppingCart, Users, 
+  TrendingUp, TrendingDown, DollarSign, ShoppingCart, Users, 
   Calendar, Download, FileText, BarChart3,
   Clock, CreditCard, Percent, Package, RefreshCw
 } from "lucide-react";
@@ -259,7 +259,7 @@ export default function POSReports() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card className="bg-card border border-border">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -276,6 +276,40 @@ export default function POSReports() {
                 </p>
               </div>
               <DollarSign className="h-8 w-8 text-primary" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card border border-border">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Sales Returns</p>
+                <p className="text-2xl font-bold text-red-600">
+                  NPR {salesSummary?.total_returns?.toLocaleString() || '0'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {salesSummary?.total_return_transactions || 0} return transactions
+                </p>
+              </div>
+              <TrendingDown className="h-8 w-8 text-red-500" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card border border-border">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Net Sales</p>
+                <p className="text-2xl font-bold text-green-600">
+                  NPR {salesSummary?.net_sales?.toLocaleString() || '0'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  After deducting returns
+                </p>
+              </div>
+              <TrendingUp className="h-8 w-8 text-green-500" />
             </div>
           </CardContent>
         </Card>
@@ -302,27 +336,10 @@ export default function POSReports() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Avg Transaction</p>
-                <p className="text-2xl font-bold text-foreground">
-                  NPR {salesSummary?.avg_transaction_value?.toFixed(0) || '0'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Profit Margin: {salesSummary?.profit_margin?.toFixed(1) || '0'}%
-                </p>
-              </div>
-              <Percent className="h-8 w-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border border-border">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
                 <p className="text-sm font-medium text-muted-foreground">Unique Customers</p>
                 <p className="text-2xl font-bold text-foreground">{salesSummary?.unique_customers || 0}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Total Items: {salesSummary?.total_items_sold || 0}
+                  Avg: NPR {salesSummary?.avg_transaction_value?.toFixed(0) || '0'}
                 </p>
               </div>
               <Users className="h-8 w-8 text-primary" />

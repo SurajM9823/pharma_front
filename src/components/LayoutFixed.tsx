@@ -9,6 +9,7 @@ import { AppSidebar } from "./AppSidebar";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { 
   Building2, LogOut, Settings, Bell, Search, 
   Shield, Heart, User as UserIcon 
@@ -29,6 +30,10 @@ import { RoleBasedDashboard } from "./RoleBasedDashboard";
 export default function LayoutFixed() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [selectedOrg, setSelectedOrg] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [userPermissions, setUserPermissions] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -45,6 +50,41 @@ export default function LayoutFixed() {
     enabled: true
   });
 
+  // Search functionality
+  useEffect(() => {
+    const searchTimeout = setTimeout(async () => {
+      if (searchQuery.length >= 2) {
+        setSearchLoading(true);
+        try {
+          const apiUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/pos/search/?q=${encodeURIComponent(searchQuery)}`;
+          
+          const response = await fetch(apiUrl, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('access_token') || localStorage.getItem('token')}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            setSearchResults(data);
+          } else {
+            setSearchResults([]);
+          }
+        } catch (error) {
+          console.error('Search failed:', error);
+          setSearchResults([]);
+        } finally {
+          setSearchLoading(false);
+        }
+      } else {
+        setSearchResults([]);
+      }
+    }, 300);
+
+    return () => clearTimeout(searchTimeout);
+  }, [searchQuery]);
+
   useEffect(() => {
     const storedUser = localStorage.getItem("currentUser");
     const storedOrg = localStorage.getItem("selectedOrganization");
@@ -58,9 +98,38 @@ export default function LayoutFixed() {
       } else if (user.organizationId) {
         setSelectedOrg(user.organizationId);
       }
+      
+      // Fetch user permissions
+      fetchUserPermissions(user.id);
     }
     // AuthGuard will handle redirecting to login if no user
   }, []);
+
+  const fetchUserPermissions = async (userId) => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/auth/users/${userId}/module-permissions/`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token') || localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUserPermissions(data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user permissions:', error);
+    }
+  };
+
+  const hasPOSSettingsPermission = () => {
+    if (!userPermissions) return false;
+    const posModule = userPermissions.modules?.find(m => m.id === 'pos');
+    if (!posModule || !posModule.has_access) return false;
+    const settingsSubModule = posModule.sub_modules?.find(sm => sm.id === 'pos_settings');
+    return settingsSubModule?.has_access || false;
+  };
 
   const handleLogout = () => {
     // Clear authentication data but preserve remembered credentials
@@ -139,15 +208,55 @@ export default function LayoutFixed() {
           )}
 
           {/* Search */}
-          <Button variant="ghost" size="icon">
-            <Search className="w-4 h-4" />
-          </Button>
+          <div className="relative">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 w-64"
+              />
+            </div>
+            {searchQuery.length >= 2 && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
+                {searchLoading ? (
+                  <div className="p-4 text-center text-gray-500">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    Searching...
+                  </div>
+                ) : searchResults.length > 0 ? (
+                  searchResults.map((result, index) => (
+                    <div 
+                      key={`${result.type}-${result.id || index}`}
+                      className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+                      onClick={() => {
+                        if (result.url) {
+                          navigate(result.url);
+                          setSearchQuery('');
+                          setSearchResults([]);
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="font-medium text-sm">{result.name}</div>
+                          <div className="text-xs text-gray-500 mt-1">{result.description}</div>
+                        </div>
+                        <span className="ml-2 text-xs bg-gray-100 px-2 py-1 rounded">{result.type}</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-4 text-center text-gray-500">
+                    No results found for "{searchQuery}"
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
-          {/* Notifications */}
-          <Button variant="ghost" size="icon" className="relative">
-            <Bell className="w-4 h-4" />
-            <span className="absolute -top-1 -right-1 w-2 h-2 bg-destructive rounded-full"></span>
-          </Button>
+
 
           {/* User Menu */}
           <div className="flex items-center gap-3 border-l border-border pl-4">
@@ -166,9 +275,15 @@ export default function LayoutFixed() {
             </div>
 
             <div className="flex gap-2">
-              <Button variant="ghost" size="icon">
-                <Settings className="w-4 h-4" />
-              </Button>
+              {hasPOSSettingsPermission() && (
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  onClick={() => navigate('/pos/settings')}
+                >
+                  <Settings className="w-4 h-4" />
+                </Button>
+              )}
               <Button variant="ghost" size="icon" onClick={handleLogout}>
                 <LogOut className="w-4 h-4" />
               </Button>

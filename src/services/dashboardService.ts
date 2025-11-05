@@ -2,6 +2,8 @@ import api, { ApiResponse } from './api';
 
 export interface DashboardStats {
   totalSales: number;
+  totalReturns: number;
+  netSales: number;
   patientCredit: number;
   supplierCredit: number;
   criticalStock: number;
@@ -46,7 +48,7 @@ export const dashboardService = {
       params.append('date_filter', dateFilter);
       if (branchId) params.append('branch_id', branchId);
 
-      const response = await api.get(`/pos/dashboard/stats/?${params}`);
+      const response = await api.get(`/pos/manager/dashboard/stats/?${params}`);
       return {
         success: true,
         data: response.data,
@@ -56,13 +58,15 @@ export const dashboardService = {
       // Try to get real data from multiple endpoints
       try {
         const [posStats, inventoryStats, patientStats] = await Promise.allSettled([
-          api.get('/pos/dashboard/stats/'),
+          api.get('/pos/manager/dashboard/stats/'),
           api.get('/inventory/dashboard/stats/'),
           api.get('/patients/dashboard/stats/')
         ]);
 
         const stats: DashboardStats = {
           totalSales: 0,
+          totalReturns: 0,
+          netSales: 0,
           patientCredit: 0,
           supplierCredit: 0,
           criticalStock: 0,
@@ -84,7 +88,9 @@ export const dashboardService = {
         // Extract data from successful responses
         if (posStats.status === 'fulfilled' && posStats.value.data) {
           const posData = posStats.value.data;
-          stats.totalSales = posData.total_sales || 0;
+          stats.totalSales = posData.totalSales || posData.total_sales || 0;
+          stats.totalReturns = posData.totalReturns || posData.total_returns || 0;
+          stats.netSales = posData.netSales || posData.net_sales || 0;
           stats.todaySales = posData.today_sales || 0;
           stats.totalTransactions = posData.total_transactions || 0;
           stats.avgTransaction = posData.avg_transaction || 0;
@@ -94,10 +100,10 @@ export const dashboardService = {
 
         if (inventoryStats.status === 'fulfilled' && inventoryStats.value.data) {
           const invData = inventoryStats.value.data;
-          stats.criticalStock = invData.critical_stock || 0;
-          stats.expiring = invData.expiring_items || 0;
-          stats.lowStockItems = invData.low_stock_items || 0;
-          stats.expiringItems = invData.expiring_items || 0;
+          stats.criticalStock = invData.criticalStock || invData.critical_stock || 0;
+          stats.expiring = invData.expiringItems || invData.expiring_items || 0;
+          stats.lowStockItems = invData.lowStockItems || invData.low_stock_items || 0;
+          stats.expiringItems = invData.expiringItems || invData.expiring_items || 0;
           stats.totalMedications = invData.total_medications || 0;
           stats.stockValue = invData.stock_value || 0;
           stats.pendingOrders = invData.pending_orders || 0;
@@ -105,7 +111,7 @@ export const dashboardService = {
 
         if (patientStats.status === 'fulfilled' && patientStats.value.data) {
           const patData = patientStats.value.data;
-          stats.patientCredit = patData.patient_credit || 0;
+          stats.patientCredit = patData.patientCredit || patData.patient_credit || 0;
           stats.todayPatients = patData.today_patients || 0;
         }
 
@@ -120,6 +126,8 @@ export const dashboardService = {
           success: true,
           data: {
             totalSales: 125000,
+            totalReturns: 8500,
+            netSales: 116500,
             patientCredit: 45000,
             supplierCredit: 78000,
             criticalStock: 12,

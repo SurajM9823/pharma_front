@@ -5,15 +5,17 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Search, Plus, Minus, Trash2, X, Eye, Filter, Printer, Split } from "lucide-react";
+import { Search, Plus, Minus, Trash2, X, Eye, Filter, Printer, Split, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ReceiptModal from "@/components/ReceiptModal";
+import { useNavigate } from "react-router-dom";
 
 // API Base URL
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/backend';
 
 export default function POSBilling() {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [cartItems, setCartItems] = useState([]);
   const [customerInfo, setCustomerInfo] = useState({ name: "", phone: "", discount: 0 });
@@ -60,6 +62,14 @@ export default function POSBilling() {
     tax_inclusive: false,
     payment_methods: ['cash', 'online']
   });
+  const [showCreditApprovalDialog, setShowCreditApprovalDialog] = useState(false);
+  const [creditApprovalData, setCreditApprovalData] = useState({
+    credit_limit: '',
+    phone: '',
+    address: ''
+  });
+  const [isProcessingCreditApproval, setIsProcessingCreditApproval] = useState(false);
+  const [patientCreditInfo, setPatientCreditInfo] = useState(null);
   const { toast } = useToast();
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
@@ -278,10 +288,10 @@ export default function POSBilling() {
       setCartItems(prevItems => {
         let newItems = [...prevItems];
         
-        Object.values(priceGroups).forEach(group => {
+        Object.values(priceGroups).forEach((group: any) => {
           const cartKey = `${product.medicine_id}_${group.price}`;
           const existingItemIndex = newItems.findIndex(item => item.cart_key === cartKey);
-          
+
           if (existingItemIndex >= 0) {
             newItems[existingItemIndex] = {
               ...newItems[existingItemIndex],
@@ -451,19 +461,44 @@ export default function POSBilling() {
     }
   };
 
-  const handlePatientSelect = (patient) => {
+  const handlePatientSelect = async (patient) => {
     setPatientId(patient.patient_id || '');
     setPatientName(patient.full_name || `${patient.first_name || ''} ${patient.last_name || ''}`.trim());
     setPatientPhone(patient.phone || '');
     setPatientAge(patient.age || '');
     setPatientGender(patient.gender || '');
-    setCustomerInfo({ 
-      name: patient.full_name || `${patient.first_name || ''} ${patient.last_name || ''}`.trim(), 
-      phone: patient.phone || '', 
-      discount: 0 
+    setCustomerInfo({
+      name: patient.full_name || `${patient.first_name || ''} ${patient.last_name || ''}`.trim(),
+      phone: patient.phone || '',
+      discount: 0
     });
     setShowPatientSearchResults(false);
     setPatientSearchTerm('');
+
+    // Check if patient has credit approval
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/patients/${patient.id}/`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const patientData = await response.json();
+        setPatientCreditInfo({
+          credit_allowed: patientData.credit_allowed || false,
+          credit_limit: patientData.credit_limit || 0,
+          current_credit_balance: patientData.current_credit_balance || 0
+        });
+      } else {
+        // If patient fetch fails, reset credit info
+        setPatientCreditInfo(null);
+      }
+    } catch (error) {
+      console.error('Error fetching patient credit info:', error);
+      setPatientCreditInfo(null);
+    }
   };
 
   const handleSaveBill = async () => {
@@ -598,7 +633,7 @@ export default function POSBilling() {
     }
   };
 
-  const showSalePreview = () => {
+  const showSalePreview = async () => {
     if (cartItems.length === 0) {
       toast({
         title: "Cart Empty",
@@ -607,6 +642,42 @@ export default function POSBilling() {
       });
       return;
     }
+
+    // Check credit limit validation before showing preview
+    const isSplitPayment = splitPayments.some(p => p.amount && parseFloat(p.amount) > 0);
+    const totalSplitAmount = splitPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const finalCreditAmount = isSplitPayment ? Math.max(0, total - totalSplitAmount) : creditAmount;
+    const isCreditSale = finalCreditAmount > 0;
+
+    if (isCreditSale) {
+      // For walk-in customers (no patientId) or patients without credit info, always show approval dialog
+      if (!patientId || !patientCreditInfo || !patientCreditInfo.credit_allowed) {
+        // Show credit approval dialog
+        setCreditApprovalData({
+          credit_limit: Math.max(0, finalCreditAmount).toString(),
+          phone: patientPhone || '',
+          address: ''
+        });
+        setShowCreditApprovalDialog(true);
+        return;
+      } else {
+        // Patient has credit approval, check credit limit
+        const currentCreditBalance = patientCreditInfo.current_credit_balance || 0;
+        const availableCredit = patientCreditInfo.credit_limit - currentCreditBalance;
+
+        if (finalCreditAmount > availableCredit) {
+          // Show credit approval dialog to allow limit increase
+          setCreditApprovalData({
+            credit_limit: Math.max(patientCreditInfo.credit_limit, finalCreditAmount + currentCreditBalance).toString(),
+            phone: patientPhone || '',
+            address: patientCreditInfo.address || ''
+          });
+          setShowCreditApprovalDialog(true);
+          return;
+        }
+      }
+    }
+
     setShowPreviewModal(true);
   };
 
@@ -617,6 +688,39 @@ export default function POSBilling() {
       // Check if split payment is used
       const isSplitPayment = splitPayments.some(p => p.amount && parseFloat(p.amount) > 0);
       const totalSplitAmount = splitPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+
+      // Check if credit is being used and patient has credit approval
+      const finalCreditAmount = isSplitPayment ? Math.max(0, total - totalSplitAmount) : creditAmount;
+      const isCreditSale = finalCreditAmount > 0;
+
+      if (isCreditSale) {
+        // For walk-in customers (no patientId) or patients without credit info, always show approval dialog
+        if (!patientId || !patientCreditInfo || !patientCreditInfo.credit_allowed) {
+          // Show credit approval dialog
+          setCreditApprovalData({
+            credit_limit: '',
+            phone: patientPhone || '',
+            address: ''
+          });
+          setShowCreditApprovalDialog(true);
+          return;
+        } else {
+          // Patient has credit approval, check credit limit
+          const currentCreditBalance = patientCreditInfo.current_credit_balance || 0;
+          const availableCredit = patientCreditInfo.credit_limit - currentCreditBalance;
+
+          if (finalCreditAmount > availableCredit) {
+            // Show credit approval dialog to allow limit increase
+            setCreditApprovalData({
+              credit_limit: Math.max(patientCreditInfo.credit_limit, finalCreditAmount + currentCreditBalance).toString(),
+              phone: patientPhone || '',
+              address: patientCreditInfo.address || ''
+            });
+            setShowCreditApprovalDialog(true);
+            return;
+          }
+        }
+      }
 
       const saleData = {
         patient_id: patientId,
@@ -638,7 +742,7 @@ export default function POSBilling() {
         tax_amount: taxAmount,
         payment_method: isSplitPayment ? 'split' : paymentMethod,
         paid_amount: isSplitPayment ? totalSplitAmount : (parseFloat(paidAmount) || 0),
-        credit_amount: isSplitPayment ? Math.max(0, total - totalSplitAmount) : creditAmount,
+        credit_amount: finalCreditAmount,
         transaction_id: paymentMethod === 'online' ? `TXN_${Date.now()}` : '',
         split_payments: isSplitPayment ? splitPayments.filter(p => p.amount && parseFloat(p.amount) > 0) : null,
         sale_id: editingBillId // Include sale_id if completing pending bill
@@ -664,9 +768,9 @@ export default function POSBilling() {
 
       const result = await response.json();
 
-      const saleType = (isSplitPayment ? totalSplitAmount < total : creditAmount > 0) ? 'Credit Sale' : 'Cash Sale';
-      const message = (isSplitPayment ? totalSplitAmount < total : creditAmount > 0)
-        ? `Credit sale completed. Due: NPR ${(isSplitPayment ? total - totalSplitAmount : creditAmount).toFixed(2)}`
+      const saleType = isCreditSale ? 'Credit Sale' : 'Cash Sale';
+      const message = isCreditSale
+        ? `Credit sale completed. Due: NPR ${finalCreditAmount.toFixed(2)}`
         : `Sale completed for NPR ${total.toFixed(2)}`;
 
       toast({
@@ -701,6 +805,16 @@ export default function POSBilling() {
         { method: 'cash', amount: '', transaction_id: '' },
         { method: 'online', amount: '', transaction_id: '' }
       ]);
+      setPatientCreditInfo(null);
+
+      // Clear patient info when clearing form
+      setPatientId("");
+      setPatientName("");
+      setPatientPhone("");
+      setPatientAge("");
+      setPatientGender("");
+      setPatientSearchTerm("");
+      setShowPatientSearchResults(false);
 
       // Refresh data
       fetchInventory();
@@ -715,6 +829,175 @@ export default function POSBilling() {
         variant: "destructive",
       });
     }
+  };
+
+  const handleCreditApprovalSubmit = async () => {
+    const creditLimit = parseFloat(creditApprovalData.credit_limit);
+    if (creditLimit <= 0) {
+      toast({
+        title: "Invalid Credit Limit",
+        description: "Credit limit must be greater than 0",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Only require phone and address for new credit approvals, not limit increases
+    const isExistingPatientWithCredit = patientCreditInfo && patientCreditInfo.credit_allowed;
+    if (!isExistingPatientWithCredit && (!creditApprovalData.phone.trim() || !creditApprovalData.address.trim())) {
+      toast({
+        title: "Missing Information",
+        description: "Phone number and address are required for credit approval",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // For existing patients, use their stored address if not provided in the form
+    if (isExistingPatientWithCredit && !creditApprovalData.address.trim() && patientCreditInfo?.address) {
+      setCreditApprovalData(prev => ({ ...prev, address: patientCreditInfo.address }));
+    }
+
+    setIsProcessingCreditApproval(true);
+    
+    // Use requestAnimationFrame to prevent forced reflow
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+
+      // For walk-in customers, we need to create a patient first
+      let patientIdToUse = patientId;
+      console.log('Initial patientIdToUse:', patientIdToUse);
+      console.log('patientId state:', patientId);
+      console.log('patientName:', patientName);
+
+      if (!patientIdToUse) {
+        console.log('Creating new walk-in patient...');
+        // Create a walk-in patient first
+        const patientData = {
+          first_name: patientName.split(' ')[0] || 'Walk-in',
+          last_name: patientName.split(' ').slice(1).join(' ') || 'Customer',
+          phone: creditApprovalData.phone,
+          address: creditApprovalData.address,
+          patient_type: 'outpatient',
+          gender: patientGender || 'other',
+          date_of_birth: new Date().toISOString().split('T')[0],
+          city: 'Unknown',
+          state: 'Nepal',
+          country: 'Nepal',
+          organization_id: currentUser?.organization_id,
+          branch_id: userBranchId
+        };
+
+        console.log('Patient data to create:', patientData);
+
+        const patientResponse = await fetch(`${API_BASE_URL}/patients/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(patientData)
+        });
+
+        console.log('Patient creation response status:', patientResponse.status);
+
+        if (patientResponse.ok) {
+          const newPatient = await patientResponse.json();
+          console.log('Raw patient response:', newPatient);
+          
+          // Backend now returns full patient data with id field
+          patientIdToUse = newPatient.id;
+          setPatientId(newPatient.patient_id);
+          
+          console.log('Final patientIdToUse:', patientIdToUse);
+
+          // Use requestAnimationFrame instead of setTimeout to prevent forced reflow
+          await new Promise(resolve => requestAnimationFrame(() => {
+            setTimeout(resolve, 100); // Reduced delay
+          }));
+          console.log('After delay, patientIdToUse is:', patientIdToUse);
+        } else {
+          const errorData = await patientResponse.json();
+          console.error('Patient creation failed:', errorData);
+          throw new Error('Failed to create patient');
+        }
+      }
+
+      // Validate patientIdToUse before making API call
+      if (!patientIdToUse) {
+        throw new Error('Patient ID is required but not available');
+      }
+
+      // Now approve credit for the patient or update existing credit limit
+      console.log('About to call credit-status API with patientIdToUse:', patientIdToUse);
+      console.log('Credit limit:', creditLimit);
+      console.log('Phone:', creditApprovalData.phone);
+      console.log('Address:', creditApprovalData.address);
+
+      const response = await fetch(`${API_BASE_URL}/patients/${patientIdToUse}/credit-status/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          credit_allowed: true,
+          credit_limit: creditLimit,
+          phone: creditApprovalData.phone,
+          address: creditApprovalData.address
+        })
+      });
+
+      console.log('Credit-status API response status:', response.status);
+
+      if (response.ok) {
+        const result = await response.json();
+        const action = isExistingPatientWithCredit ? 'increased' : 'approved';
+        toast({
+          title: `Credit ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+          description: `Credit limit has been ${action} to NPR ${creditLimit.toLocaleString()}`,
+        });
+
+        // Update patient credit info
+        setPatientCreditInfo({
+          credit_allowed: true,
+          credit_limit: creditLimit,
+          current_credit_balance: result.current_credit_balance
+        });
+
+        setShowCreditApprovalDialog(false);
+
+        // Instead of proceeding directly to checkout, show the sale preview
+        await showSalePreview();
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Credit Approval Failed",
+          description: errorData.error || "Failed to approve credit",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error approving credit:', error);
+      toast({
+        title: "Error",
+        description: "Failed to approve credit",
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessingCreditApproval(false);
+    }
+  };
+
+  const handleSkipCreditApproval = () => {
+    setShowCreditApprovalDialog(false);
+    // Adjust payment to full amount
+    setPaidAmount(total.toString());
+    toast({
+      title: "Credit Skipped",
+      description: "Payment adjusted to full amount. No credit will be given.",
+    });
   };
 
   const handleViewBill = async (bill) => {
@@ -798,7 +1081,7 @@ export default function POSBilling() {
                   <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 z-10" size={14} />
                   <Input
                     id="patientId"
-                    value={patientSearchTerm || patientId}
+                    value={patientSearchTerm || patientId || ''}
                     onChange={(e) => {
                       if (e.target.value.trim()) {
                         handlePatientSearch(e.target.value);
@@ -831,7 +1114,7 @@ export default function POSBilling() {
                 <Label htmlFor="patientName" className="text-xs">Name</Label>
                 <Input
                   id="patientName"
-                  value={patientName}
+                  value={patientName || ''}
                   onChange={(e) => {
                     setPatientName(e.target.value);
                     setCustomerInfo({ ...customerInfo, name: e.target.value });
@@ -844,7 +1127,7 @@ export default function POSBilling() {
                 <Label htmlFor="patientAge" className="text-xs">Age</Label>
                 <Input
                   id="patientAge"
-                  value={patientAge}
+                  value={patientAge || ''}
                   onChange={(e) => setPatientAge(e.target.value)}
                   placeholder="Age"
                   className="h-8 text-sm"
@@ -854,7 +1137,7 @@ export default function POSBilling() {
                 <Label htmlFor="patientPhone" className="text-xs">Phone</Label>
                 <Input
                   id="patientPhone"
-                  value={patientPhone}
+                  value={patientPhone || ''}
                   onChange={(e) => {
                     setPatientPhone(e.target.value);
                     setCustomerInfo({ ...customerInfo, phone: e.target.value });
@@ -865,7 +1148,7 @@ export default function POSBilling() {
               </div>
               <div>
                 <Label htmlFor="patientGender" className="text-xs">Gender</Label>
-                <Select value={patientGender} onValueChange={setPatientGender}>
+                <Select value={patientGender || ''} onValueChange={setPatientGender}>
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue placeholder="Gender" />
                   </SelectTrigger>
@@ -1011,6 +1294,33 @@ export default function POSBilling() {
                             return;
                           }
                           const newQty = parseInt(value) || 1;
+
+                          // Find the product to check total stock
+                          const product = inventory.find(p => p.medicine_id === item.medicine_id);
+                          if (product) {
+                            // Check if new quantity exceeds available stock
+                            const otherCartQty = cartItems
+                              .filter(cartItem => cartItem.medicine_id === item.medicine_id && cartItem.cart_key !== item.cart_key)
+                              .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
+
+                            const totalRequested = otherCartQty + newQty;
+                            const maxAllowed = product.total_stock;
+
+                            if (totalRequested > maxAllowed) {
+                              // Auto-adjust to maximum allowed quantity
+                              const adjustedQty = Math.max(1, maxAllowed - otherCartQty);
+                              setCartItems(prevItems => prevItems.map(cartItem =>
+                                cartItem.cart_key === item.cart_key ? { ...cartItem, quantity: adjustedQty } : cartItem
+                              ));
+                              toast({
+                                title: "Quantity Adjusted",
+                                description: `Maximum available stock: ${maxAllowed}. Adjusted to ${adjustedQty}.`,
+                                variant: "default",
+                              });
+                              return;
+                            }
+                          }
+
                           // Only update if quantity actually changed
                           if (newQty !== item.quantity) {
                             updateQuantity(item.cart_key, newQty);
@@ -1084,7 +1394,7 @@ export default function POSBilling() {
                 <div>
                   <Input
                     type="number"
-                    value={discountType === "percent" ? (customerInfo.discount || "") : (discountAmount || "")}
+                    value={discountType === "percent" ? (customerInfo.discount || '') : (discountAmount || '')}
                     onChange={(e) => {
                       const value = e.target.value === "" ? 0 : parseFloat(e.target.value) || 0;
                       if (discountType === "percent") {
@@ -1251,7 +1561,21 @@ export default function POSBilling() {
                 {paginatedBills.map((bill, index) => (
                   <tr key={bill.id || `bill-${index}`} className="border-b hover:bg-gray-50">
                     <td className="p-2 font-medium">{bill.id}</td>
-                    <td className="p-2">{bill.patientName}</td>
+                    <td className="p-2">
+                      <span
+                        className={bill.patientId ? "text-blue-600 hover:text-blue-800 hover:underline cursor-pointer" : ""}
+                        onClick={bill.patientId ? () => {
+                          // The patientId in the bill response is the formatted patient_id string
+                          // We need to find the actual database ID by looking it up
+                          // For now, let's try to extract the numeric part or use the patientId as-is
+                          // The backend should handle both formatted and numeric IDs
+                          navigate(`/patients/detail/${bill.patientId}`);
+                        } : undefined}
+                        title={bill.patientId ? "Click to view patient details" : ""}
+                      >
+                        {bill.patientName}
+                      </span>
+                    </td>
                     <td className="p-2">{bill.patientPhone}</td>
                     <td className="p-2">NPR {bill.total.toFixed(2)}</td>
                     <td className="p-2">
@@ -1299,7 +1623,7 @@ export default function POSBilling() {
                                 'Authorization': `Bearer ${token}`
                               }
                             });
-                            
+
                             if (response.ok) {
                               const receiptData = await response.json();
                               setReceiptData(receiptData);
@@ -1321,6 +1645,26 @@ export default function POSBilling() {
                           }
                         }}>
                           <Printer size={14} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="bg-orange-50 hover:bg-orange-100 border-orange-300 text-orange-700"
+                          onClick={() => {
+                            // Navigate to returns page with bill data
+                            navigate('/returns', {
+                              state: {
+                                saleId: bill.id,
+                                patientName: bill.patientName,
+                                patientId: bill.patientId,
+                                totalAmount: bill.total,
+                                saleDate: bill.completedAt
+                              }
+                            });
+                          }}
+                          title="Process Return"
+                        >
+                          ↩️ Return
                         </Button>
                         <Button size="sm" variant="destructive" onClick={() => handleDeleteBill(bill.id)}>
                           <Trash2 size={14} />
@@ -1456,6 +1800,55 @@ export default function POSBilling() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+
+              {/* Returns Section */}
+              {selectedBill.returns && selectedBill.returns.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-2">Returns</h3>
+                  <div className="space-y-2">
+                    {selectedBill.returns.map((returnItem, index) => (
+                      <div key={returnItem.id || `return-${index}`} className="p-3 border border-orange-200 rounded bg-orange-50">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <p className="font-medium text-sm">Return #{returnItem.return_number}</p>
+                            <p className="text-xs text-gray-600">
+                              Date: {returnItem.return_date ? new Date(returnItem.return_date).toLocaleDateString() : 'N/A'}
+                            </p>
+                            <p className="text-xs text-gray-600">
+                              Status: <Badge variant={returnItem.status === 'completed' ? 'default' : 'secondary'} className="text-xs">
+                                {returnItem.status}
+                              </Badge>
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-medium text-sm">Refund: NPR {returnItem.refund_amount?.toFixed(2)}</p>
+                          </div>
+                        </div>
+
+                        {returnItem.return_items && returnItem.return_items.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-xs font-medium mb-1">Returned Items:</p>
+                            <div className="space-y-1">
+                              {returnItem.return_items.map((item, itemIndex) => (
+                                <div key={itemIndex} className="text-xs bg-white p-2 rounded border">
+                                  <span className="font-medium">{item.product_name || item.quantity} x {item.product_name}</span>
+                                  <span className="ml-2 text-gray-600">({item.reason || 'No reason provided'})</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {returnItem.notes && (
+                          <div className="mt-2 p-2 bg-white rounded text-xs">
+                            <p className="text-gray-700">{returnItem.notes}</p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -1725,6 +2118,100 @@ export default function POSBilling() {
                 disabled={splitPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) === 0}
               >
                 Apply Split
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Credit Approval Dialog */}
+      <Dialog open={showCreditApprovalDialog} onOpenChange={setShowCreditApprovalDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {patientCreditInfo && patientCreditInfo.credit_allowed ? 'Credit Limit Adjustment Required' : 'Credit Approval Required'}
+            </DialogTitle>
+            <DialogDescription>
+              {patientCreditInfo && patientCreditInfo.credit_allowed
+                ? 'The credit amount exceeds the available limit. Please adjust the credit limit to complete this sale.'
+                : 'This patient doesn\'t have credit approval. Would you like to approve credit to complete this sale?'
+              }
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className={`p-4 rounded-lg border ${patientCreditInfo && patientCreditInfo.credit_allowed ? 'bg-blue-50 border-blue-200' : 'bg-orange-50 border-orange-200'}`}>
+              <div className="text-sm text-muted-foreground">Sale Summary</div>
+              <div className="font-medium">{patientName}</div>
+              <div className="text-sm">Total: NPR {total.toFixed(2)}</div>
+              <div className="text-sm">Credit Required: NPR {creditAmount.toFixed(2)}</div>
+              {patientCreditInfo && patientCreditInfo.credit_allowed && (
+                <div className="text-sm mt-2">
+                  <div>Current Credit Balance: NPR {patientCreditInfo.current_credit_balance?.toLocaleString() || '0'}</div>
+                  <div>Current Credit Limit: NPR {patientCreditInfo.credit_limit?.toLocaleString() || '0'}</div>
+                  <div>Available Credit: NPR {(patientCreditInfo.credit_limit - (patientCreditInfo.current_credit_balance || 0)).toLocaleString()}</div>
+                  <div className="text-red-600 font-medium mt-1">
+                    Additional Credit Needed: NPR {(creditAmount - (patientCreditInfo.credit_limit - (patientCreditInfo.current_credit_balance || 0))).toLocaleString()}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="credit-limit">Credit Limit (NPR)</Label>
+                <Input
+                  id="credit-limit"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={creditApprovalData.credit_limit}
+                  onChange={(e) => setCreditApprovalData(prev => ({ ...prev, credit_limit: e.target.value }))}
+                  placeholder="Enter credit limit"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="patient-phone">Phone Number</Label>
+                <Input
+                  id="patient-phone"
+                  value={creditApprovalData.phone}
+                  onChange={(e) => setCreditApprovalData(prev => ({ ...prev, phone: e.target.value }))}
+                  placeholder="Phone number is required"
+                />
+                {!creditApprovalData.phone.trim() && (
+                  <div className="text-sm text-red-600 mt-1">Phone number is required for credit approval</div>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="patient-address">Address</Label>
+                <Input
+                  id="patient-address"
+                  value={creditApprovalData.address}
+                  onChange={(e) => setCreditApprovalData(prev => ({ ...prev, address: e.target.value }))}
+                  placeholder="Address is required for credit approval"
+                />
+                {!creditApprovalData.address.trim() && (
+                  <div className="text-sm text-red-600 mt-1">Address is required for credit approval</div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={handleSkipCreditApproval}
+                className="flex-1"
+              >
+                Skip & Pay Full
+              </Button>
+              <Button
+                onClick={handleCreditApprovalSubmit}
+                disabled={isProcessingCreditApproval}
+                className="flex-1 bg-green-600 hover:bg-green-700"
+              >
+                {isProcessingCreditApproval ? 'Processing...' : (patientCreditInfo && patientCreditInfo.credit_allowed ? 'Increase Limit' : 'Approve Credit')}
               </Button>
             </div>
           </div>

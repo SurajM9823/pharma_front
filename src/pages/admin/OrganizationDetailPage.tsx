@@ -10,7 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { ArrowLeft, Building2, MapPin, Phone, Mail, Globe, Calendar, CreditCard, Users, UserCheck, Eye, EyeOff, Plus, Loader2, Settings, Key, Power } from 'lucide-react';
 import { organizationsAPI, usersAPI, subscriptionAPI, Organization, User, Branch } from '@/services/api';
+import { subscriptionService, BillingRecord } from '@/services/subscriptionService';
 import { useToast } from '@/hooks/use-toast';
+import { formatCurrency as formatCurrencyUtil } from '@/lib/utils';
 
 // Module Permission Data Structure (from backend)
 interface ModulePermission {
@@ -61,6 +63,31 @@ export default function OrganizationDetailPage() {
   const [loadingPermissions, setLoadingPermissions] = useState(false);
   const [availableModules, setAvailableModules] = useState<ModulePermission[]>([]);
   const [userModules, setUserModules] = useState<ModulePermission[]>([]);
+  
+  // Billing history state
+  const [billingHistory, setBillingHistory] = useState<BillingRecord[]>([]);
+  const [loadingBilling, setLoadingBilling] = useState(false);
+  
+  // Subscription management state
+  const [showManageSubscriptionDialog, setShowManageSubscriptionDialog] = useState(false);
+  const [subscriptionForm, setSubscriptionForm] = useState({
+    plan: '',
+    pricing_tier: '',
+    status: 'active',
+    auto_renew: true,
+    end_date: ''
+  });
+  const [selectedPlanDetails, setSelectedPlanDetails] = useState<any>(null);
+  
+  // Payment recording state
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [selectedBillingRecord, setSelectedBillingRecord] = useState<BillingRecord | null>(null);
+  const [paymentForm, setPaymentForm] = useState({
+    amount: '',
+    payment_method: 'bank_transfer',
+    payment_reference: '',
+    is_partial: false
+  });
 
   // User form state
   const [userForm, setUserForm] = useState({
@@ -83,6 +110,7 @@ export default function OrganizationDetailPage() {
       loadBranches();
       loadSubscriptionDetails();
       loadSubscriptionPlans();
+      loadBillingHistory();
     }
   }, [id]);
 
@@ -92,6 +120,31 @@ export default function OrganizationDetailPage() {
       loadUsers();
     }
   }, [selectedBranchFilter]);
+
+  // Populate subscription form when dialog opens
+  useEffect(() => {
+    if (showManageSubscriptionDialog && subscriptionDetails) {
+      const currentPlan = subscriptionPlans.find(p => p.id === subscriptionDetails.plan);
+      setSelectedPlanDetails(currentPlan);
+      setSubscriptionForm({
+        plan: subscriptionDetails.plan_details?.name || '',
+        pricing_tier: subscriptionDetails.plan_details?.billing_cycle || '',
+        status: subscriptionDetails.status,
+        auto_renew: subscriptionDetails.auto_renew,
+        end_date: subscriptionDetails.end_date ? subscriptionDetails.end_date.split('T')[0] : ''
+      });
+    } else if (showManageSubscriptionDialog && !subscriptionDetails) {
+      // Reset form for new subscription
+      setSelectedPlanDetails(null);
+      setSubscriptionForm({
+        plan: '',
+        pricing_tier: '',
+        status: 'active',
+        auto_renew: true,
+        end_date: ''
+      });
+    }
+  }, [showManageSubscriptionDialog, subscriptionDetails, subscriptionPlans]);
 
   const loadOrganization = async () => {
     try {
@@ -187,12 +240,8 @@ export default function OrganizationDetailPage() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'NPR',
-      minimumFractionDigits: 0,
-    }).format(amount);
+  const formatCurrency = (amount: number, currency: string = 'NPR') => {
+    return formatCurrencyUtil(amount, currency);
   };
 
   const getDaysUntilExpiry = (endDate: string) => {
@@ -611,6 +660,257 @@ export default function OrganizationDetailPage() {
     return userModules || [];
   };
 
+  const loadBillingHistory = async () => {
+    if (!id) return;
+    
+    try {
+      setLoadingBilling(true);
+      const response = await subscriptionService.getBillingHistory(parseInt(id));
+      setBillingHistory(response.billing_history);
+    } catch (error) {
+      console.error('Failed to load billing history:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load billing history',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingBilling(false);
+    }
+  };
+
+  const handleCreateSubscription = async () => {
+    if (!subscriptionForm.plan) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please select a subscription plan',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (selectedPlanDetails?.pricing_tiers?.length > 0 && !subscriptionForm.pricing_tier) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please select a billing cycle',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setLoadingSubscription(true);
+      const selectedPlan = subscriptionPlans.find(p => p.name === subscriptionForm.plan);
+      
+      // Calculate end date based on billing cycle
+      let endDate = subscriptionForm.end_date;
+      if (!endDate && subscriptionForm.pricing_tier) {
+        const now = new Date();
+        const cycle = subscriptionForm.pricing_tier.toLowerCase();
+        if (cycle.includes('month') || cycle === 'monthly') {
+          endDate = new Date(now.setMonth(now.getMonth() + 1)).toISOString().split('T')[0];
+        } else if (cycle.includes('year') || cycle === 'yearly' || cycle === 'annual' || cycle.includes('annual')) {
+          endDate = new Date(now.setFullYear(now.getFullYear() + 1)).toISOString().split('T')[0];
+        } else if (cycle.includes('quarter') || cycle === 'quarterly') {
+          endDate = new Date(now.setMonth(now.getMonth() + 3)).toISOString().split('T')[0];
+        } else if (cycle.includes('week') || cycle === 'weekly') {
+          endDate = new Date(now.setDate(now.getDate() + 7)).toISOString().split('T')[0];
+        } else {
+          endDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        }
+      }
+      
+      const subscriptionData = {
+        organization: parseInt(id!),
+        plan: selectedPlan?.id,
+        auto_renew: subscriptionForm.auto_renew,
+        end_date: endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      };
+
+      await subscriptionService.createSubscription(subscriptionData);
+      
+      toast({
+        title: 'Success',
+        description: 'Subscription created successfully',
+      });
+      
+      setShowManageSubscriptionDialog(false);
+      setSubscriptionForm({ plan: '', pricing_tier: '', status: 'active', auto_renew: true, end_date: '' });
+      setSelectedPlanDetails(null);
+      loadSubscriptionDetails();
+      loadBillingHistory();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.error || 'Failed to create subscription',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingSubscription(false);
+    }
+  };
+
+  const handleUpdateSubscription = async () => {
+    if (!subscriptionDetails) return;
+
+    try {
+      setLoadingSubscription(true);
+      
+      if (subscriptionForm.plan) {
+        // Update plan
+        await subscriptionService.updateOrganizationPlan(parseInt(id!), { plan: subscriptionForm.plan });
+      }
+      
+      // Update other subscription details
+      const updateData: any = {};
+      if (subscriptionForm.status !== subscriptionDetails.status) {
+        updateData.status = subscriptionForm.status;
+      }
+      if (subscriptionForm.auto_renew !== subscriptionDetails.auto_renew) {
+        updateData.auto_renew = subscriptionForm.auto_renew;
+      }
+      if (subscriptionForm.end_date) {
+        updateData.end_date = subscriptionForm.end_date;
+      }
+      
+      if (Object.keys(updateData).length > 0) {
+        await subscriptionService.updateSubscription(subscriptionDetails.id, updateData);
+      }
+      
+      toast({
+        title: 'Success',
+        description: 'Subscription updated successfully',
+      });
+      
+      setShowManageSubscriptionDialog(false);
+      setSubscriptionForm({ plan: '', pricing_tier: '', status: 'active', auto_renew: true, end_date: '' });
+      setSelectedPlanDetails(null);
+      loadSubscriptionDetails();
+      loadBillingHistory();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.error || 'Failed to update subscription',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingSubscription(false);
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    if (!subscriptionDetails) return;
+
+    if (!confirm('Are you sure you want to cancel this subscription? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      setLoadingSubscription(true);
+      await subscriptionService.cancelSubscription(subscriptionDetails.id);
+      
+      toast({
+        title: 'Success',
+        description: 'Subscription cancelled successfully',
+      });
+      
+      loadSubscriptionDetails();
+      loadBillingHistory();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.error || 'Failed to cancel subscription',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingSubscription(false);
+    }
+  };
+
+  const handleRecordPayment = async () => {
+    if (!selectedBillingRecord || !paymentForm.amount) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please enter payment amount',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setLoadingBilling(true);
+      const paymentAmount = parseFloat(paymentForm.amount);
+      const invoiceAmount = selectedBillingRecord.amount;
+      
+      // Create payment record
+      const paymentData = {
+        organization: selectedBillingRecord.organization,
+        subscription: selectedBillingRecord.subscription,
+        transaction_type: 'payment',
+        status: 'completed',
+        amount: paymentAmount,
+        currency: selectedBillingRecord.currency,
+        payment_method: paymentForm.payment_method,
+        payment_reference: paymentForm.payment_reference,
+        description: `Payment for ${selectedBillingRecord.invoice_number}${paymentAmount < invoiceAmount ? ' (Partial)' : ''}`,
+        paid_date: new Date().toISOString()
+      };
+
+      const token = localStorage.getItem('token');
+      const baseURL = 'http://localhost:8080';
+
+      await fetch(`${baseURL}/organizations/billing-records/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(paymentData)
+      });
+
+      // Update invoice status if fully paid
+      if (paymentAmount >= invoiceAmount) {
+        await fetch(`${baseURL}/organizations/billing-records/${selectedBillingRecord.id}/`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ status: 'completed', paid_date: new Date().toISOString() })
+        });
+      }
+
+      toast({
+        title: 'Success',
+        description: paymentAmount >= invoiceAmount ? 'Payment recorded successfully' : 'Partial payment recorded successfully',
+      });
+      
+      setShowPaymentDialog(false);
+      setPaymentForm({ amount: '', payment_method: 'bank_transfer', payment_reference: '', is_partial: false });
+      setSelectedBillingRecord(null);
+      loadBillingHistory();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: 'Failed to record payment',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingBilling(false);
+    }
+  };
+
+  const openPaymentDialog = (record: BillingRecord) => {
+    setSelectedBillingRecord(record);
+    setPaymentForm({ 
+      amount: record.amount.toString(), 
+      payment_method: 'bank_transfer', 
+      payment_reference: '', 
+      is_partial: false 
+    });
+    setShowPaymentDialog(true);
+  };
+
   const getStatusBadge = (status: string) => {
     const statusConfig = {
       active: { variant: 'default' as const, color: 'bg-green-100 text-green-800' },
@@ -759,10 +1059,11 @@ export default function OrganizationDetailPage() {
 
       {/* Tabs for different sections */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="branches">Branches</TabsTrigger>
           <TabsTrigger value="subscription">Subscription</TabsTrigger>
+          <TabsTrigger value="billing">Billing History</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-4">
@@ -1455,15 +1756,122 @@ export default function OrganizationDetailPage() {
 
                   {/* Action Buttons */}
                   <div className="flex justify-center gap-4">
-                    <Button variant="outline">
-                      View Billing History
+                    <Button 
+                      variant="destructive" 
+                      onClick={handleCancelSubscription}
+                      disabled={loadingSubscription || subscriptionDetails.status === 'cancelled'}
+                    >
+                      {loadingSubscription ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                      Cancel Subscription
                     </Button>
-                    <Button>
-                      Manage Subscription
-                    </Button>
-                    <Button variant="outline">
-                      Upgrade Plan
-                    </Button>
+                    <Dialog open={showManageSubscriptionDialog} onOpenChange={setShowManageSubscriptionDialog}>
+                      <DialogTrigger asChild>
+                        <Button>
+                          Manage Subscription
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-md">
+                        <DialogHeader>
+                          <DialogTitle>Manage Subscription</DialogTitle>
+                          <DialogDescription>
+                            Update subscription settings for {organization.name}
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="plan">Subscription Plan</Label>
+                            <Select value={subscriptionForm.plan} onValueChange={(value) => {
+                              const selectedPlan = subscriptionPlans.find(p => p.name === value);
+                              setSelectedPlanDetails(selectedPlan);
+                              setSubscriptionForm({ ...subscriptionForm, plan: value, pricing_tier: '' });
+                            }}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select plan" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {subscriptionPlans.map(plan => (
+                                  <SelectItem key={plan.id} value={plan.name}>
+                                    {plan.display_name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {selectedPlanDetails && selectedPlanDetails.pricing_tiers && selectedPlanDetails.pricing_tiers.length > 0 && (
+                            <div className="space-y-2">
+                              <Label htmlFor="pricing_tier">Billing Cycle</Label>
+                              <Select value={subscriptionForm.pricing_tier} onValueChange={(value) => {
+                                const now = new Date();
+                                let endDate = '';
+                                const cycle = value.toLowerCase();
+                                if (cycle.includes('month') || cycle === 'monthly') {
+                                  endDate = new Date(now.setMonth(now.getMonth() + 1)).toISOString().split('T')[0];
+                                } else if (cycle.includes('year') || cycle === 'yearly' || cycle === 'annual' || cycle.includes('annual')) {
+                                  endDate = new Date(now.setFullYear(now.getFullYear() + 1)).toISOString().split('T')[0];
+                                } else if (cycle.includes('quarter') || cycle === 'quarterly') {
+                                  endDate = new Date(now.setMonth(now.getMonth() + 3)).toISOString().split('T')[0];
+                                } else if (cycle.includes('week') || cycle === 'weekly') {
+                                  endDate = new Date(now.setDate(now.getDate() + 7)).toISOString().split('T')[0];
+                                }
+                                setSubscriptionForm({ ...subscriptionForm, pricing_tier: value, end_date: endDate });
+                              }}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select billing cycle" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {selectedPlanDetails.pricing_tiers.map((tier: any, index: number) => (
+                                    <SelectItem key={index} value={tier.cycle}>
+                                      {tier.cycle.charAt(0).toUpperCase() + tier.cycle.slice(1)} - {formatCurrency(parseFloat(tier.price))}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
+                          <div className="space-y-2">
+                            <Label htmlFor="status">Status</Label>
+                            <Select value={subscriptionForm.status} onValueChange={(value) => setSubscriptionForm({ ...subscriptionForm, status: value })}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="active">Active</SelectItem>
+                                <SelectItem value="inactive">Inactive</SelectItem>
+                                <SelectItem value="cancelled">Cancelled</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              id="auto_renew"
+                              checked={subscriptionForm.auto_renew}
+                              onChange={(e) => setSubscriptionForm({ ...subscriptionForm, auto_renew: e.target.checked })}
+                              className="w-4 h-4"
+                            />
+                            <Label htmlFor="auto_renew">Auto Renew</Label>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="end_date">End Date</Label>
+                            <Input
+                              id="end_date"
+                              type="date"
+                              value={subscriptionForm.end_date}
+                              onChange={(e) => setSubscriptionForm({ ...subscriptionForm, end_date: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-4">
+                          <Button variant="outline" onClick={() => setShowManageSubscriptionDialog(false)}>
+                            Cancel
+                          </Button>
+                          <Button onClick={handleUpdateSubscription} disabled={loadingSubscription}>
+                            {loadingSubscription && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                            Update Subscription
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 </div>
               ) : (
@@ -1502,16 +1910,263 @@ export default function OrganizationDetailPage() {
                         <div className="text-sm text-gray-600">Active users</div>
                       </div>
                     </div>
-                    <Button>
-                      Create Subscription
-                    </Button>
+                    <Dialog open={showManageSubscriptionDialog} onOpenChange={setShowManageSubscriptionDialog}>
+                        <DialogTrigger asChild>
+                          <Button>
+                            Create Subscription
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>Create Subscription</DialogTitle>
+                            <DialogDescription>
+                              Create a new subscription for {organization.name}
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="plan">Subscription Plan</Label>
+                              <Select value={subscriptionForm.plan} onValueChange={(value) => {
+                                const selectedPlan = subscriptionPlans.find(p => p.name === value);
+                                setSelectedPlanDetails(selectedPlan);
+                                setSubscriptionForm({ ...subscriptionForm, plan: value, pricing_tier: '' });
+                              }}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select plan" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {subscriptionPlans.map(plan => (
+                                    <SelectItem key={plan.id} value={plan.name}>
+                                      {plan.display_name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            {selectedPlanDetails && selectedPlanDetails.pricing_tiers && selectedPlanDetails.pricing_tiers.length > 0 && (
+                              <div className="space-y-2">
+                                <Label htmlFor="pricing_tier">Billing Cycle</Label>
+                                <Select value={subscriptionForm.pricing_tier} onValueChange={(value) => setSubscriptionForm({ ...subscriptionForm, pricing_tier: value })}>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select billing cycle" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {selectedPlanDetails.pricing_tiers.map((tier: any, index: number) => (
+                                      <SelectItem key={index} value={tier.cycle}>
+                                        {tier.cycle.charAt(0).toUpperCase() + tier.cycle.slice(1)} - {formatCurrency(parseFloat(tier.price))}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                id="auto_renew"
+                                checked={subscriptionForm.auto_renew}
+                                onChange={(e) => setSubscriptionForm({ ...subscriptionForm, auto_renew: e.target.checked })}
+                                className="w-4 h-4"
+                              />
+                              <Label htmlFor="auto_renew">Auto Renew</Label>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="end_date">End Date</Label>
+                              <Input
+                                id="end_date"
+                                type="date"
+                                value={subscriptionForm.end_date}
+                                onChange={(e) => setSubscriptionForm({ ...subscriptionForm, end_date: e.target.value })}
+                              />
+                            </div>
+                          </div>
+                          <div className="flex justify-end gap-2 mt-4">
+                            <Button variant="outline" onClick={() => setShowManageSubscriptionDialog(false)}>
+                              Cancel
+                            </Button>
+                            <Button onClick={handleCreateSubscription} disabled={loadingSubscription}>
+                              {loadingSubscription && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                              Create Subscription
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                   </div>
                 </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="billing" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5" />
+                Billing History ({billingHistory.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loadingBilling ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                </div>
+              ) : billingHistory.length === 0 ? (
+                <div className="text-center py-8">
+                  <CreditCard className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Billing History</h3>
+                  <p className="text-gray-600 mb-4">
+                    No billing records found for {organization.name}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {billingHistory.map((record) => (
+                    <div key={record.id} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                          record.transaction_type === 'payment' ? 'bg-green-100' :
+                          record.transaction_type === 'invoice' ? 'bg-blue-100' :
+                          record.transaction_type === 'refund' ? 'bg-yellow-100' :
+                          'bg-purple-100'
+                        }`}>
+                          <CreditCard className={`w-5 h-5 ${
+                            record.transaction_type === 'payment' ? 'text-green-600' :
+                            record.transaction_type === 'invoice' ? 'text-blue-600' :
+                            record.transaction_type === 'refund' ? 'text-yellow-600' :
+                            'text-purple-600'
+                          }`} />
+                        </div>
+                        <div>
+                          <div className="font-medium capitalize">
+                            {record.transaction_type} - {formatCurrency(record.amount, record.currency)}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {record.invoice_number && (
+                              <span className="mr-2">#{record.invoice_number}</span>
+                            )}
+                            {record.description && (
+                              <span className="mr-2">{record.description}</span>
+                            )}
+                            <span>{new Date(record.created_at).toLocaleDateString()}</span>
+                          </div>
+                          {record.billing_period_start && record.billing_period_end && (
+                            <div className="text-xs text-gray-500">
+                              Billing Period: {new Date(record.billing_period_start).toLocaleDateString()} - {new Date(record.billing_period_end).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge className={`${
+                          record.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          record.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          record.status === 'failed' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
+                        </Badge>
+                        {record.payment_method && (
+                          <div className="text-sm text-gray-600 capitalize">
+                            {record.payment_method}
+                          </div>
+                        )}
+                        {record.transaction_type === 'invoice' && record.status === 'pending' && (
+                          <Button
+                            size="sm"
+                            onClick={() => openPaymentDialog(record)}
+                            className="ml-2"
+                          >
+                            Record Payment
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* Payment Recording Dialog */}
+      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Record Payment</DialogTitle>
+            <DialogDescription>
+              Record payment for {selectedBillingRecord?.invoice_number}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {selectedBillingRecord && (
+              <div className="bg-gray-50 p-3 rounded-lg space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">Invoice Amount:</span>
+                  <span className="text-gray-600">{formatCurrency(selectedBillingRecord.amount, selectedBillingRecord.currency)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">Due Date:</span>
+                  <span className="text-gray-600">{selectedBillingRecord.due_date ? new Date(selectedBillingRecord.due_date).toLocaleDateString() : 'N/A'}</span>
+                </div>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="payment_amount">Payment Amount *</Label>
+              <Input
+                id="payment_amount"
+                type="number"
+                step="0.01"
+                value={paymentForm.amount}
+                onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                placeholder="Enter payment amount"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="payment_method">Payment Method</Label>
+              <Select value={paymentForm.payment_method} onValueChange={(value) => setPaymentForm({ ...paymentForm, payment_method: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="check">Check</SelectItem>
+                  <SelectItem value="credit_card">Credit Card</SelectItem>
+                  <SelectItem value="digital_wallet">Digital Wallet</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="payment_reference">Payment Reference</Label>
+              <Input
+                id="payment_reference"
+                value={paymentForm.payment_reference}
+                onChange={(e) => setPaymentForm({ ...paymentForm, payment_reference: e.target.value })}
+                placeholder="Transaction ID, Check number, etc."
+              />
+            </div>
+            {selectedBillingRecord && parseFloat(paymentForm.amount) < selectedBillingRecord.amount && paymentForm.amount && (
+              <div className="bg-yellow-50 p-3 rounded-lg">
+                <div className="text-sm text-yellow-800">
+                  <strong>Partial Payment:</strong> This payment is less than the full invoice amount. The invoice will remain pending until fully paid.
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setShowPaymentDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleRecordPayment} disabled={loadingBilling || !paymentForm.amount}>
+              {loadingBilling && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Record Payment
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

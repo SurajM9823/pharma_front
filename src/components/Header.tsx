@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bell, User, LogOut, Menu, X, Package, Search } from "lucide-react";
+import { Bell, User, LogOut, Menu, X, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -119,8 +119,12 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
               {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
             </Button>
             <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
-                <Package className="w-5 h-5 text-primary-foreground" />
+              <div className="w-8 h-8 bg-primary rounded flex items-center justify-center overflow-hidden">
+                <img
+                  src="/drpharmaslogo.png"
+                  alt="DrPharmas Logo"
+                  className="w-6 h-6 object-contain"
+                />
               </div>
               <div>
                 <h1 className="text-lg font-semibold">drpharmas</h1>
@@ -148,9 +152,13 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
           >
             {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </Button>
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
-              <Package className="w-5 h-5 text-primary-foreground" />
+          <div className="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => navigate('/')}>
+            <div className="w-8 h-8 bg-primary rounded flex items-center justify-center overflow-hidden">
+              <img
+                src="/drpharmaslogo.png"
+                alt="DrPharmas Logo"
+                className="w-6 h-6 object-contain"
+              />
             </div>
             <div>
               <h1 className="text-lg font-semibold">drpharmas</h1>

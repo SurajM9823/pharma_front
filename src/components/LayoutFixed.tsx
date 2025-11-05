@@ -10,9 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { 
-  Building2, LogOut, Settings, Bell, Search, 
-  Shield, Heart, User as UserIcon 
+import {
+  Building2, LogOut, Settings, Bell, Search,
+  Shield, User as UserIcon
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSessionTimeout } from "@/hooks/useSessionTimeout";
@@ -179,8 +179,14 @@ export default function LayoutFixed() {
     <div className="min-h-screen flex flex-col w-full">
       {/* Fixed Header */}
       <header className="fixed top-0 left-0 right-0 h-16 bg-gradient-to-r from-blue-50 to-indigo-100/80 backdrop-blur-sm border-b border-blue-200 z-50 flex items-center px-4">
-        <div className="flex items-center gap-3 ml-12">
-          <Heart className="w-6 h-6 text-primary" />
+        <div className="flex items-center gap-3 ml-12 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => navigate('/')}>
+          <div className="w-8 h-8 bg-primary rounded flex items-center justify-center overflow-hidden">
+            <img
+              src="/drpharmaslogo.png"
+              alt="DrPharmas Logo"
+              className="w-6 h-6 object-contain"
+            />
+          </div>
           <div>
             <h1 className="text-lg font-bold">drpharmas</h1>
           </div>

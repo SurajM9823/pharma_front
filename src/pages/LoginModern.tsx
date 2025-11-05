@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Package, User, Lock, Stethoscope, Pill, Heart, Loader2, Eye, EyeOff } from "lucide-react";
+import { User, Lock, Stethoscope, Pill, Heart, Loader2, Eye, EyeOff } from "lucide-react";
 import heroImage from "@/assets/hero.png";
+import logoImage from "/drpharmaslogo.png";
 import { useToast } from "@/hooks/use-toast";
 import { authAPI, subscriptionAPI } from "@/services/api";
 import { getRoleDisplayName } from "@/data/mockData";
@@ -112,7 +113,7 @@ export default function LoginModern() {
         localStorage.setItem("userEmail", user.email);
 
         if (user.organization_id) {
-          localStorage.setItem("selectedOrganization", user.organization_id);
+          localStorage.setItem("selectedOrganization", user.organization_id.toString());
         }
 
         // Skip subscription check for now - allow login
@@ -198,8 +199,12 @@ export default function LoginModern() {
         <div className="w-full max-w-md space-y-8">
           {/* Mobile Logo */}
           <div className="lg:hidden text-center space-y-4">
-            <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto">
-              <Package className="w-8 h-8 text-white" />
+            <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto overflow-hidden">
+              <img
+                src={logoImage}
+                alt="DrPharmas Logo"
+                className="w-12 h-12 object-contain"
+              />
             </div>
             <h1 className="text-3xl font-extrabold text-white tracking-tight">
               <span className="bg-gradient-to-r from-white to-blue-200 bg-clip-text text-transparent">
